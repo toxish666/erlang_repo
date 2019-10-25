@@ -156,10 +156,10 @@ Answer:
 ```
 
 #### 1.6. Булевые операции
-- [bool.erl](https://github.com/toxish666/erlang_repo/erlang_course_tasks/1-basic/bool.erl)
+- [bool.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/1-basic/bool.erl)
 
 #### 1.7.  Работа со списками.
-- [mlist.erl](https://github.com/toxish666/erlang_repo/erlang_course_tasks/1-basic/mlist.erl)
+- [mlist.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/1-basic/mlist.erl)
 
 #### 1.8.  Работа с JSON объектами.
-- [mjson.erl](https://github.com/toxish666/erlang_repo/erlang_course_tasks/1-basic/mjson.erl)
+- [mjson.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/1-basic/mjson.erl)

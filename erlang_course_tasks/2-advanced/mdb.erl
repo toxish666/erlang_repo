@@ -16,7 +16,12 @@
 	 write/3,
 	 delete/2,
 	 read/2,
-	 match/2]).
+	 match/2,
+	 append/3,
+	 batch_delete/2,
+	 batch_read/2]).
+
+-include_lib("eunit/include/eunit.hrl").
 
 -type tree() :: {{key(), any()}, tree(), tree()}.
 
@@ -97,7 +102,7 @@ rotate(K, {{K, RD}, {{RSK, RSD}, SS, SL}, L}) ->
     {{RSK, RSD}, SS, {{K, RD}, SL, L}};
 rotate(_Key, _Db) -> {error, not_found}.
 
-    
+
 -spec read(Key, Db) -> {ok, Element} | {error, not_found} when
       Key :: key(),
       Db :: db(),
@@ -137,3 +142,67 @@ match(E, [{{_, _RD}, S, L} | T], A) ->
     match(E, [S, L | T], A).
 
 
+%% @doc append = delete
+append(K, E, Db) ->
+    write(K, E, Db).
+
+
+-spec batch_delete(KeyList, Db) -> Db | {error, batch_limit} when
+      KeyList :: keylist(),
+      Db :: db().
+%% @doc deletes data based on keylist
+%% if no batch has been given - batch is equal to 0
+%% @end
+batch_delete(KL, Db = {P, _}) ->
+    batch_delete(KL, Db, P).
+
+batch_delete(KL, Db, []) ->
+    batch_delete(KL, Db, [{batch, 0}]);
+batch_delete(KL, Db, [{batch, N} | _]) ->
+    batch_delete(KL, Db, N);
+batch_delete(KL, Db, [_|T]) ->
+    batch_delete(KL, Db, T);
+batch_delete([], Db, N) when is_number(N) ->
+    Db;
+batch_delete([_|_], _, 0) -> 
+    {error, batch_limit};
+batch_delete([K|T], Db, N) when is_number(N) -> 
+    batch_delete(T, delete(K, Db), N - 1).
+
+
+-spec batch_read(KeyList, Db) -> [{Key, Element}] | {error, instance} | {error, batch_limit} when
+      KeyList :: keylist(),
+      Db :: db(),
+      Key :: key(),
+      Element :: any().
+%% @doc find elements based on keylist
+%% if no batch has been given - batch is equal to 0
+%% @end
+batch_read(KL, Db = {P, _}) ->
+    batch_read(KL, Db, P).
+
+batch_read(KL, Db, []) ->
+    batch_read(KL, Db, [{batch, 0}]);
+batch_read(KL, Db, [{batch,N} | _]) when is_number(N) -> 
+    batch_read(KL, Db, N, []);
+batch_read(KL, Db, [_| T]) -> 
+    batch_read(KL, Db, T).
+
+batch_read([], _, _, A) -> 
+    A;
+batch_read([_|_], _, 0, _) -> 
+    {error, batch_limit};
+batch_read([K|T], Db, N, A) -> 
+    case read(K, Db) of
+	{ok, El} ->
+	    batch_read(T, Db, N - 1, [El | A]); 
+	_ -> 
+	    {error, instance}
+    end.
+
+
+-ifdef(test).
+
+
+
+-endif.

@@ -1,8 +1,10 @@
 -module('22oct').
 
 -export([make_proc/0,
-	ffping/1,
-	ffpong/1]).
+	 ffping/1,
+	 ffpong/1,
+	 funping/0,
+	 funpong/0]).
 
 %% Pid2 = spawn(fun() -> receive Msg -> io:format("Got message: ~p~n", [Msg]) end end).
 
@@ -76,9 +78,11 @@ make_proc() ->
 
 
 ffping(I) ->
+    K = I,
     receive
 	{ping, From, Msg} -> 
 	    io:format("received ping ~n"),
+	    K + 1,
 	    timer:sleep(1000),
 	    From ! {pong, self(), Msg};
 	{stat, From} ->
@@ -89,7 +93,7 @@ ffping(I) ->
        true ->
 	    nothing
     end,
-    ffping(I+1).
+    ffping(K).
 
 ffpong(I) ->
     receive
@@ -105,4 +109,50 @@ ffpong(I) ->
        true ->
 	    nothing
     end,
-    ffpong(I+1).
+    ffpong(I).
+
+
+%% ----------------------------------
+funpong() ->
+    spawn(fun () -> 
+		  V = fun Counter(I) ->
+			  receive
+			      {pong, From, Msg} -> 
+				  timer:sleep(1000),
+				  From ! {ping, self(), Msg},
+				  io:format("received PONG ~p~n", [I]),
+				  if (I rem 10) == 0 ->
+					  io:format("10 !!");
+				     true ->
+					  nothing
+				  end,
+				  Counter(I+1);
+			      {stat, From} ->
+				  From ! {gotstat, I},
+				  Counter(I)
+			  end
+		  end,
+		  V(1)
+	  end).
+
+funping() ->
+    spawn(fun () -> 
+		  V = fun Counter(I) ->
+			  receive
+			      {ping, From, Msg} -> 
+				  timer:sleep(1000),
+				  From ! {pong, self(), Msg},
+				  io:format("received PONG ~p~n", [I]),
+				  if (I rem 20) == 0 ->
+					  io:format("10 !!");
+				     true ->
+					  nothing
+				  end,
+				  Counter(I+1);
+			      {stat, From} ->
+				  From ! {gotstat, I},
+				  Counter(I)
+			  end
+		  end,
+		  V(1)
+	  end).
