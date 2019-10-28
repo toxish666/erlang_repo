@@ -5,14 +5,17 @@
 %% @reference See <a href="https://github.com/bitgorbovsky/erlang-course-tasks/blob/master/tasks/1-basic.md#18-%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%B0-%D1%81-json-%D0%BE%D0%B1%D1%8A%D0%B5%D0%BA%D1%82%D0%B0%D0%BC%D0%B8"> task itself </a> for more info.
 %%
 %%
+%% @TODO anonymous objects can be added: {{"key",value1}, {"key2",value2}}
+%% and then maps may contain several keys (as of now only 1: #{"key", value}
+%% valuespec should include newtype {keyvaluespec()} where keyvaluespec() is {key(), valuespec()}
 
 -module(mjson).
--compile(export_all).
+
 -export([new/1,
 	 read/2,
 	 write/3]).
 
--include_lib("eunit/include/eunit.hrl").
+-export_type([json/0]).
 
 -type key() :: string().
 
@@ -22,7 +25,7 @@
 
 -type valuespec() :: basicvalue() | [basicvalue()] | {key(), valuespec()} | [{key(), valuespec()}].
 
--type json() :: map() | [map()].
+-opaque json() :: map() | [map()].
 
 
 -spec new(ValueSpec) -> JsonObj | {error, bad_arg} when
@@ -285,6 +288,9 @@ is_json_spec([H|L], A) ->
 %% test suite
 %% ----------------------------------------------------------------
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
 module_test_() -> 
     [{"test suite 1",
       {foreach, fun start1/0, [fun new1/1, fun read1/1, fun write1/1]}},
@@ -297,27 +303,27 @@ module_test_() ->
      {"test suite 5",
       {setup, fun start5/0, fun new5/1}}
     ].
-      
+
 
 
 start1() ->
     new([
-		     {"1",
-		      [888,
-		       {"2",
-			999
-		       },
-		       {"2",
-			[1000,
-			 {"3",
-			  true
-			 }
-			]
-		       },
-		       111
-		      ]
-		     }
-		    ]).
+	 {"1",
+	  [888,
+	   {"2",
+	    999
+	   },
+	   {"2",
+	    [1000,
+	     {"3",
+	      true
+	     }
+	    ]
+	   },
+	   111
+	  ]
+	 }
+	]).
 
 %% given [{"1", [888, {"2", 999}, {"2", [1000, {"3", true}]}, 111]}] outup of new is
 %% M = [#{"1" => [888,#{"2" => 999},#{"2" => [1000, #{"3" => true}]},111]}]
@@ -446,3 +452,5 @@ start5() ->
 new5(Json) ->
     JExpected = {error, bad_arg},
     ?_assertEqual(Json, JExpected).
+
+-endif.
