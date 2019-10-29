@@ -103,3 +103,22 @@ filtermap(F, L) ->
 			end
 		end, [], L)).
 ```
+
+#### 2.5 Ленивые вычисления
+- [mlazy.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/2-advanced/mlazy.erl)
+
+- Right fold is imposible to implement with lambdas due to the reason that we are obliged to get to the end of a list in order to begin to calculate accumulating values. By doing so, we evaluate lambdas eliminating any laziness whatsoever. 
+It is still possible to implement lazy_map or lazy_filter with lazy_foldl though with 2 drawbacks: these functions return only when they are eveluated to the bottom and they return reversed lists.
+```erlang
+lazy_map2(_, []) ->
+    fun() ->
+	    []
+    end;
+lazy_map2(F, L = [_|_]) ->
+    lazy_foldl(fun (H, A) -> [F(H)|A] end, [], L).
+```
+
+- Lazy concatenation preserves laziness of both lists and evaluates elements when it needed exactly. So lazy concatenation does not traverse first list before prepending second one, that's the benefit.
+
+- All other tasks are available here: [mlazy.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/2-advanced/mlazy.erl)
+
