@@ -48,36 +48,84 @@ new() ->
 	  end).
 
 
+run_on_database_alive(DbP, Lmd) ->
+    case is_process_alive(DbP) of
+	false ->
+	    {error, database_down_error};
+	true ->
+	    Lmd()
+    end.
 
 destroy(DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       destroy_impl(DbP)
+			       end).
+
+write(K, E, DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       write_impl(K, E, DbP)
+			       end).
+
+delete(K, DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       delete_impl(K, DbP)
+			       end).
+
+read(K, DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       read_impl(K, DbP)
+			       end).
+
+match(E, DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       match_impl(E, DbP)
+			       end).
+
+append(K, V, DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       append_impl(K, V, DbP)
+			       end).
+
+batch_delete(K, DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       batch_delete_impl(K, DbP)
+			       end).
+
+batch_read(K, DbP) ->
+    run_on_database_alive(DbP, fun() ->
+				       batch_read_impl(K, DbP)
+			       end).
+
+
+destroy_impl(DbP) ->
     DbP ! {self(), destroy, []},
     recv_anything().
     
-write(K, E, DbP) ->
+write_impl(K, E, DbP) ->
     DbP ! {self(), write, [K, E]},
     recv_anything().
 
-delete(K, DbP) ->
+delete_impl(K, DbP) ->
     DbP ! {self(), delete, [K]},
     recv_anything().
 
-read(K, DbP) ->
+read_impl(K, DbP) ->
     DbP ! {self(), read, [K]},
     recv_anything().
 
-match(E, DbP) ->
+match_impl(E, DbP) ->
     DbP ! {self(), match, [E]},
     recv_anything().
 
-append(K, E, DbP) ->
+append_impl(K, E, DbP) ->
     DbP ! {self(), append, [K,E]},
     recv_anything().
 
-batch_delete(KL, DbP) ->
+batch_delete_impl(KL, DbP) ->
     DbP ! {self(), batch_delete, [KL]},
     recv_anything().
 
-batch_read(KL, DbP) ->
+batch_read_impl(KL, DbP) ->
     DbP ! {self(), batch_read, [KL]},
     recv_anything().
 
