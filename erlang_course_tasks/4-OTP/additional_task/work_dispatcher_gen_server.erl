@@ -65,6 +65,7 @@ release(GenServerPid, WorkerPid) ->
 %% LIFECYCLE
 %%----------------------------------------------------------------------------
 init([]) -> 
+    process_flag(trap_exit, true),
     V1 = create_worker(spawn_link(?MODULE, init_worker, []), free),
     V2 = create_worker(spawn_link(?MODULE, init_worker, []), free),
     V3 = create_worker(spawn_link(?MODULE, init_worker, []), free),
