@@ -5,23 +5,10 @@
 %% 
 %%
 
--module(atm_gen).
+-module(atm_node).
 
 -behaviour(gen_statem).
 
-%%----------------------------------------------------------------------------
-%% MACROS
-%%----------------------------------------------------------------------------
--define(NAME, single_atm).
-
--define(TIMEOUTINSEC, 10000).
--define(TIMEOUT, {state_timeout, ?TIMEOUTINSEC, timeout_error}).
-
--define(MAXATTEMPTS, 3).
-
-%%----------------------------------------------------------------------------
-%% GEN_STATEM CALLBACKS
-%%----------------------------------------------------------------------------
 -export([
 	 init/1,
 	 terminate/3,
@@ -29,9 +16,6 @@
 	 callback_mode/0
 	]).
 
-%%----------------------------------------------------------------------------
-%% STATES
-%%----------------------------------------------------------------------------
 -export([
 	 handle_common/3,
 	 waiting_card/3,
@@ -41,19 +25,11 @@
 	 deposit/3
 	]).
 
-%%----------------------------------------------------------------------------
-%% PUBLIC API EXPORTS
-%%----------------------------------------------------------------------------
 -export([
-	 start_link/1,
-	 insert_card/1,
-	 push_button/1,
-	 stop_atm/0
+	 start_link/2
 	]).
 
-%%----------------------------------------------------------------------------
-%% STRUCTURES
-%%----------------------------------------------------------------------------
+
 -record(card_state, {
 		     card_no,
 		     pin,
@@ -61,50 +37,32 @@
 		    }).
 
 -record(state, {
-		card_states = [],
+		bank_server_pid,
 		current_card = #card_state{},
 		current_input = [],
 		attempts = 0
 	       }
        ).
 
-%%----------------------------------------------------------------------------
-%% PUBLIC API
-%%----------------------------------------------------------------------------
--spec start_link([{CardNo :: integer(), Pin :: list(integer()), Balance :: integer()}])
-		-> {ok, pid()} | {error, any()}.
-start_link(CardInfoList) ->
-    gen_statem:start_link({local, ?NAME}, ?MODULE, CardInfoList, []).
+
+-define(TIMEOUTINSEC, 10000).
+-define(TIMEOUT, {state_timeout, ?TIMEOUTINSEC, timeout_error}).
+
+-define(MAXATTEMPTS, 3).
 
 
--spec insert_card(CardNo :: integer()) -> ok  | {error, Reason :: term()}.
-insert_card(CardNo) ->
-    gen_statem:call(?NAME, {insert_card, CardNo}).
-
-
--spec push_button(Button ::  enter | cancel | withdraw | deposit |
-			     0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) -> 
-			 continue | {ok, Result :: term()} | {error, Reason :: term()}.
-push_button(Button) ->
-    gen_statem:call(?NAME, {push_button, Button}).
-
-
--spec stop_atm() -> ok.
-stop_atm() ->
-    gen_statem:stop(?NAME).
+start_link(Name, BankServerPid) ->
+    gen_statem:start_link({local, Name}, ?MODULE, [], []).
 
 %%----------------------------------------------------------------------------
 %% LIFECYCLE
 %%----------------------------------------------------------------------------
-init(CardInfoList) ->
+init(BankServerPid) ->
     {
      ok, 
      waiting_card, 
-     #state{
-	card_states = card_info_list_into_record(CardInfoList)
-       }
+     #state{bank_server_pid = BankServerPid}
     }.
-
 
 terminate(_, _, _) ->
     ok.
@@ -388,95 +346,3 @@ updateBalance(
       card_states = [CardChangedBalance | ElseCardStates],
       current_card = CardChangedBalance
      }.
-
-
-%% ----------------------------------------------------------------
-%% TEST SUITE
-%% ----------------------------------------------------------------
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-module_test_() -> 
-    {
-     setup, 
-     fun start1/0, 
-     fun stop1/1, 
-     fun (SetupData) ->
-	     {
-	      inorder,
-	      atmworkflow(SetupData)
-	     }
-     end
-    }.
-
-start1() ->
-    States = [
-	      {1, 7777, 500}, 
-	      {2, 1222, 12445},
-	      {3, 8832, 0}
-	     ],
-    atm_gen:start_link(States).
-
-
-stop1(_SetupData) ->
-    atm_gen:stop_atm().
-
-
-atmworkflow(_SetupData) ->
-    ErrorRes1 = atm_gen:push_button(5),
-    CardNotFoundRes = atm_gen:insert_card(12),
-    GoToWaitingState = atm_gen:insert_card(1),
-    IncorrectActionInWaitingState = atm_gen:push_button(a),
-    %% entering pin 3 times incorrect
-    InputNumber1 = atm_gen:push_button(1),
-    InputEnter1 = atm_gen:push_button(enter),
-    atm_gen:push_button(1),
-    atm_gen:push_button(enter),
-    IncorrectPinResult = atm_gen:push_button(enter),
-    %% we returned to waiting_state, so get back to waiting_pin state and input correct pin
-    CorrectPinResult = insert_card_and_input_pin(),
-    %% we can get card back on any step by pressing cancel
-    CorrectCancelResult1 = atm_gen:push_button(cancel),
-    insert_card_and_input_pin(),
-    %% withdraw branch
-    CorrectWithdrawInput = atm_gen:push_button(withdraw),
-    atm_gen:push_button(1),
-    atm_gen:push_button(0),
-    CorrectWithdrawResult = atm_gen:push_button(enter),
-    %% deposit branch
-    CorrectDepositInput = atm_gen:push_button(deposit),
-    atm_gen:push_button(1),
-    atm_gen:push_button(0),
-    atm_gen:push_button(0),
-    CorrectDepositResult = atm_gen:push_button(enter),
-    %% get card back
-    CorrectCancelResult2 = atm_gen:push_button(cancel),
-    [
-     ?_assertEqual(ErrorRes1, {error,'invalid input'}),
-     ?_assertEqual(CardNotFoundRes, {error,'incorrect card number was given'}),
-     ?_assertEqual(GoToWaitingState, {ok,waiting_for_pin}),
-     ?_assertEqual(IncorrectActionInWaitingState, {error,'invalid input'}),
-     ?_assertEqual(InputNumber1, continue),
-     ?_assertEqual(InputEnter1, {error,'incorrect pin, try again'}),
-     ?_assertEqual(IncorrectPinResult, {error,'you exceeded the number of attempts'}),
-     ?_assertEqual(CorrectPinResult, {ok,valid_pin}),
-     ?_assertEqual(CorrectCancelResult1, {ok,'you have your card back'}),
-     ?_assertEqual(CorrectWithdrawInput, {ok,withdraw}),
-     ?_assertEqual(CorrectWithdrawResult,
-		   {ok,'you received 10 money units and current balance is 490 now'}),
-     ?_assertEqual(CorrectDepositInput, {ok,deposit}),
-     ?_assertEqual(CorrectDepositResult, {ok,'your balance is 590 now'}),
-     ?_assertEqual(CorrectCancelResult2, {ok,'you have your card back'})
-    ].
-
-
-insert_card_and_input_pin() ->	
-    atm_gen:insert_card(1),
-    atm_gen:push_button(7),
-    atm_gen:push_button(7),
-    atm_gen:push_button(7),
-    atm_gen:push_button(7),
-    atm_gen:push_button(enter).
-
-
--endif.
