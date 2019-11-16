@@ -1,7 +1,19 @@
 ### Упражнения
 
+### Core (Упражнения)
 
-#### Additionals
+#### 4.1. Db on gen_server
+- [mdb_gen.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/4-OTP/core_tasks/mdb_gen/mdb_gen.erl)
+
+#### 4.2. Банкомат (gen_statem)
+- [atm_gen.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/4-OTP/core_tasks/atm_gen/atm_gen.erl)
+
+#### 4.3 Open Telecom Bank (application + supervisor)
+- [bank_otp](https://github.com/toxish666/erlang_repo/tree/master/erlang_course_tasks/4-OTP/core_tasks/bank_otp)
+
+
+### Additionals
+
 - [lockman.erl](https://github.com/toxish666/erlang_repo/blob/master/erlang_course_tasks/4-OTP/additional_task/lockman.erl)
 Process that grabbed acquire-lock and then accidently died releases it's lock and give it up for another enqueued process. We link every process with lock manager to spectate there for unexpected errors and when we release that lock we unlink that process from manager. 
 
