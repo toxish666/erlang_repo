@@ -1,10 +1,3 @@
-%%
-%%
-%% @author toxish666 [https://github.com/toxish666]
-%% @reference See <a href="https://github.com/bitgorbovsky/erlang-course-tasks/blob/master/tasks/4-OTP.md#42-%D0%B1%D0%B0%D0%BD%D0%BA%D0%BE%D0%BC%D0%B0%D1%82-gen_statem"> task itself </a> for more info.
-%% 
-%%
-
 -module(atm_node).
 
 -behaviour(gen_statem).
@@ -26,14 +19,17 @@
 	]).
 
 -export([
-	 start_link/2
+	 start_link/2,
+	 insert_card/2,
+	 push_button/2
 	]).
 
 
 -record(card_state, {
 		     card_no,
 		     pin,
-		     balance
+		     balance,
+		     offset
 		    }).
 
 -record(state, {
@@ -51,8 +47,14 @@
 -define(MAXATTEMPTS, 3).
 
 
-start_link(Name, BankServerPid) ->
-    gen_statem:start_link({local, Name}, ?MODULE, [], []).
+start_link(BankServerPid, Name) ->
+    gen_statem:start_link({local, Name}, ?MODULE, BankServerPid, []).
+
+insert_card(Name, CardNo) ->
+    gen_statem:call(Name, {insert_card, CardNo}).
+
+push_button(Name, Button) ->
+    gen_statem:call(Name, {push_button, Button}).
 
 %%----------------------------------------------------------------------------
 %% LIFECYCLE
@@ -81,9 +83,9 @@ callback_mode() ->
 waiting_card(
   {call, From}, 
   {insert_card, CardNo}, 
-  #state{ card_states = CardStates } = State
+  #state{bank_server_pid = BankServerPid} = State
  ) ->
-    case is_card_number_valid(CardStates, CardNo) of
+    case gen_server:call(BankServerPid, {is_card_number_valid, CardNo}) of
 	%% no cardNo in cardStates were found
 	invalid_card ->
 	    {
@@ -91,7 +93,7 @@ waiting_card(
 	     State, 
 	     [{reply, From, {error, 'incorrect card number was given'}}]
 	    };
-	{ok, {CardNo, ExpectedPin, CurrentBalance}}  ->
+	{ok, {CardNo, ExpectedPin, CurrentBalance, Offset}}  ->
 	    {
 	     next_state, 
 	     waiting_pin, 
@@ -99,7 +101,8 @@ waiting_card(
 			     #card_state{
 				card_no = CardNo, 
 				pin = ExpectedPin, 
-				balance = CurrentBalance
+				balance = CurrentBalance,
+				offset = Offset
 			       }
 			},
 	     [
@@ -206,7 +209,8 @@ withdraw(
 	true ->
 	    %% update status in stored data and in current data
 	    NewBalance = CurrentBalance - SumToWithdraw,
-	    NewState = updateBalance(NewBalance, State),
+	    %% request to bank_serv to change corresponding balance
+	    NewState = State#state{current_card = updateBalance(NewBalance, State)},  
 	    NewStateWithNullInput = NewState#state{current_input = []},
 	    MessageToSend = {
 			     ok, 
@@ -248,7 +252,7 @@ deposit(
     SumToWithdraw = input_to_number(CurrentInput),
     #card_state{balance = CurrentBalance} = CurrentCard,
     NewBalance = CurrentBalance + SumToWithdraw,
-    NewState = updateBalance(NewBalance, State),
+    NewState = State#state{current_card = updateBalance(NewBalance, State)},   
     NewStateWithNullInput = NewState#state{current_input = []},
     MessageToSend = {
 		     ok, 
@@ -293,27 +297,6 @@ handle_common({call, From}, _IncorrectAction, State) ->
 %%----------------------------------------------------------------------------
 %% HANDLERS
 %%----------------------------------------------------------------------------
-%% from card infos to card records
-card_info_list_into_record(CardInfoList) ->
-    lists:foldr(fun({CardNo, Pin, Balance}, Acc) ->
-			[#card_state{card_no = CardNo, 
-				     pin = Pin,
-				     balance = Balance
-				    }
-			 | Acc] 
-		end, [], CardInfoList).
-
-
-%% check if cardno in a given card record list
-is_card_number_valid(CardStates, CardNo) ->
-    case lists:keyfind(CardNo, #card_state.card_no, CardStates) of
-	false ->
-	    invalid_card;
-	#card_state{card_no = CardNo, pin = ExpectedPin, balance = CurrentBalance}  ->
-	    {ok, {CardNo, ExpectedPin, CurrentBalance}}
-    end.
-
-
 input_to_number(Input) ->
     lists:foldl(fun(Number, Acc) ->
 			Acc * 10 + Number
@@ -321,8 +304,8 @@ input_to_number(Input) ->
 
 
 reset_current_state(State) ->
-    #state{card_states = CardStates} = State,
-    #state{card_states = CardStates}.
+    #state{bank_server_pid = BankServerPid} = State,
+    #state{bank_server_pid = BankServerPid}.
 
 
 enter_next_button(From, State, CurrentInput, Number) ->
@@ -334,15 +317,10 @@ enter_next_button(From, State, CurrentInput, Number) ->
 
 
 updateBalance(
-  NewBalance, 
+  NewBalance,   
   #state{
-     card_states = CardStates, 
-     current_card = #card_state{card_no = CurrentCardNo}
-    } = State
- ) ->
-    {value, ChosenCard, ElseCardStates} = lists:keytake(CurrentCardNo, #card_state.card_no, CardStates),
-    CardChangedBalance = ChosenCard#card_state{balance = NewBalance},
-    State#state{
-      card_states = [CardChangedBalance | ElseCardStates],
-      current_card = CardChangedBalance
-     }.
+     current_card = CurrentCard,
+     bank_server_pid = BankServerPid
+    }) ->
+    {ok, UpdatedCard} = gen_server:call(BankServerPid, {update_balance, CurrentCard, NewBalance}),
+    UpdatedCard.

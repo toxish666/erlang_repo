@@ -10,17 +10,16 @@
 
 
 start_link(BankServerPid) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [BankServerPid]).
+    supervisor:start_link(?MODULE, BankServerPid).
 
 
 init(BankServerPid) ->
     MaxRestart = 5,
     MaxTime = 3000,
     SupFlags = #{strategy => simple_one_for_one, intensity => MaxRestart, period => MaxTime},
-    %% general atp in bank (assuming)
     ChildSpecForBankAtp = [#{
 			     id => bank_atp, 
-			     start => {atm_node, start_link, [atm_node, BankServerPid]},
+			     start => {atm_node, start_link, [BankServerPid]},
 			     restart => permanent,
 			     shutdown => 5000,
 			     type => worker,
