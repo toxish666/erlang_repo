@@ -9,13 +9,13 @@
 
 
 start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    supervisor:start_link(?MODULE, []).
 
 
 init([]) ->
-    MaxRestart = 1,
+    MaxRestart = 2,
     MaxTime = 3000,
-    SupFlags = #{strategy => rest_for_one, intensity => MaxRestart, period => MaxTime},
+    SupFlags = #{strategy => one_for_one, intensity => MaxRestart, period => MaxTime},
     ChildSpecForBankServer = [#{
 		  id => bank_serv, 
 		  start => {bank_serv, start_link, [self()]},

@@ -16,13 +16,14 @@ start_link(BankServerPid) ->
 init(BankServerPid) ->
     MaxRestart = 5,
     MaxTime = 3000,
-    SupFlags = #{strategy => simple_one_for_one, intensity => MaxRestart, period => MaxTime},
-    ChildSpecForBankAtp = [#{
-			     id => bank_atp, 
-			     start => {atm_node, start_link, [BankServerPid]},
-			     restart => permanent,
-			     shutdown => 5000,
-			     type => worker,
-			     modules => [atm_node]
-			    }],
+    SupFlags = #{strategy => one_for_one, intensity => MaxRestart, period => MaxTime},
+%%ChildSpecForBankAtp = [#{
+%%			     id => bank_atp, 
+%%			     start => {atm_node, start_link, [BankServerPid]},
+%%			     restart => permanent,
+%%			     shutdown => 5000,
+%%			     type => worker,
+%%			     modules => [atm_node]
+%%			    }],
+    ChildSpecForBankAtp = [],
     {ok, {SupFlags, ChildSpecForBankAtp}}.

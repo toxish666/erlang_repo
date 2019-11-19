@@ -34,11 +34,11 @@
 	  modules => [?ATM_SUPERVISOR]
 	}
        ).
-%supervisor:start_child(atm_sup, {fiva, {atm_node, start_link, [fiva, self()]}, permanent, 3000, worker, [atm_node]}).
+
 -define(SPEC_ATMNODE(Name),
 	#{
 	  id => Name,
-	  start => {?ATM_NODE, start_link, [Name, self()]},
+	  start => {?ATM_NODE, start_link, [self(), Name]},
 	  restart => permanent,
 	  shutdown => 3000,
 	  type => worker,
@@ -84,7 +84,7 @@ init(Sup) ->
     {ok, StorageFileName} = application:get_env(storage_file_name),
     CardStates = read_card_states_from_file(StorageFileName),
     CardStatesInRecord = card_info_list_into_record(CardStates),
-    self() ! {start_atp_supervisor, CardStatesInRecord, Sup},
+    self() ! {start_atp_supervisor, Sup},
     {ok, #state{card_states = CardStatesInRecord}}.
 
 terminate(_Reason, _State) ->
@@ -117,11 +117,12 @@ handle_cast(
   {start_atm, Name}, 
   #state{atm_sup = AtmSup, atms = Atms} = State
  ) ->
-    StartChildRes = supervisor:start_child(AtmSup, [Name]),
+    StartChildRes = supervisor:start_child(AtmSup, ?SPEC_ATMNODE(Name)),
     case StartChildRes of 
 	{ok, AtmPid} ->
 	    {noreply, State#state{atms = [{Name, AtmPid} | Atms]}};
-	_ ->
+	Err ->
+	    io:format("got err ~p~n", [Err]),
 	    {noreply, State}
     end;
 handle_cast(
@@ -137,12 +138,12 @@ handle_cast(
     end.
 
 
-handle_info({start_atp_supervisor, CardStates, Sup}, State) ->
+handle_info({start_atp_supervisor, Sup}, State) ->
     case supervisor:start_child(Sup, ?SPEC_ATMSUP) of
 	{ok, AtmSup} ->
-	    {noreply, State#state{card_states = CardStates, atm_sup = AtmSup}};
+	    {noreply, State#state{atm_sup = AtmSup}};
 	{error, {already_started, AtmSup}} ->
-	    {noreply, State#state{card_states = CardStates, atm_sup = AtmSup}}
+	    {noreply, State#state{atm_sup = AtmSup}}
     end;
 handle_info(Msg, State) ->
     io:format("Unknown msg: ~p~n", [Msg]),
