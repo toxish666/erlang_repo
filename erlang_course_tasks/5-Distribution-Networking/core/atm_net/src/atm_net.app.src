@@ -1,0 +1,20 @@
+{application, atm_net,
+ [{description, "An OTP library"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,
+   [
+    {port, 6543},
+    {capacity, 4}
+   ]
+  },
+  {modules, [atm_net, atm_net_sup, amt_serv, atm_state]},
+
+  {licenses, ["Apache 2.0"]},
+  {links, []},
+  {mod, {atm_net, []}}
+ ]}.

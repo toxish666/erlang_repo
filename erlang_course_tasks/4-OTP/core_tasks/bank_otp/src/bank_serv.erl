@@ -35,16 +35,16 @@
 	}
        ).
 
--define(SPEC_ATMNODE(Name),
-	#{
-	  id => Name,
-	  start => {?ATM_NODE, start_link, [self(), Name]},
-	  restart => permanent,
-	  shutdown => 3000,
-	  type => worker,
-	  modules => [?ATM_NODE]
-	 }
-       ).
+%%-define(SPEC_ATMNODE(Name),
+%%	#{
+%%	  id => Name,
+%%	  start => {?ATM_NODE, start_link, [self(), Name]},
+%%	  restart => permanent,
+%%	  shutdown => 3000,
+%%	  type => worker,
+%%	  modules => [?ATM_NODE]
+%%	 }
+%%       ).
 
 
 -record(card_state, {
@@ -117,7 +117,7 @@ handle_cast(
   {start_atm, Name}, 
   #state{atm_sup = AtmSup, atms = Atms} = State
  ) ->
-    StartChildRes = supervisor:start_child(AtmSup, ?SPEC_ATMNODE(Name)),
+    StartChildRes = supervisor:start_child(AtmSup, [Name]),
     case StartChildRes of 
 	{ok, AtmPid} ->
 	    {noreply, State#state{atms = [{Name, AtmPid} | Atms]}};
