@@ -297,18 +297,16 @@ handle_common(
 handle_common(
   info,
   {tcp, _Socket, <<"stop", _/binary>> = _Str},
-  State
+  _State
 ) ->
     io:format("Stopping atm client ~n"),
-    exit(normal),
-    {keep_state, State};
+    {stop, normal}; %% stop
 handle_common(info, {tcp, Socket, _Str}, State) ->
     send(Socket, "Error: incorrect input", []),
     {keep_state, State};
-handle_common(info, {tcp_closed, _Socket}, State) ->
+handle_common(info, {tcp_closed, _Socket}, _State) ->
     io:format("Dead tcp client ~n"),
-    exit(normal),
-    {keep_state, State}.
+    {stop, normal}.
 
 
 %%----------------------------------------------------------------------------
