@@ -203,7 +203,8 @@ update_storage_balance(NewBalance, #card_state{card_no = CardNo, pin = Pin, offs
 		     (integer_to_binary(Pin))/binary,
 		     " ",
 		     (integer_to_binary(NewBalance))/binary,
-		     "\\d"
+		     "\\d",
+		     "\n"
 		   >>,
     ok = file:pwrite(IoDev, {bof, Offset}, LineToInsert),
     file:close(IoDev),
