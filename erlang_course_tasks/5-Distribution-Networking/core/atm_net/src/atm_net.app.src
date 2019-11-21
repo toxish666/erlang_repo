@@ -9,7 +9,8 @@
   {env,
    [
     {port, 6543},
-    {capacity, 4}
+    {capacity, 4},
+    {storage_file_name, "src/storage"}
    ]
   },
   {modules, [atm_net, atm_net_sup, amt_serv, atm_state]},
