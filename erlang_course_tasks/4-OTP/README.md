@@ -20,7 +20,7 @@ Application can be run with following sequence of commands:
 To start new atm: bank_otp:start_atm(fiva).
 
 <p align="center">
-  <img alt="screen1" src="https://github.com/toxish666/erlang_repo/tree/master/erlang_course_tasks/4-OTP/screen1.png" width="400">
+  <img alt="screen1" src="https://github.com/toxish666/erlang_repo/tree/master/erlang_course_tasks/4-OTP/core_tasks/bank_otp/screen1.png" width="400">
 </p>
 
 Here we've got main supervisor which has it's 2 children: main server (for storage and whatnot) and supervisor for future workers. Workers created dynamically. 

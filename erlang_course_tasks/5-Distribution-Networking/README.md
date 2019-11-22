@@ -24,3 +24,18 @@ Commands that atm terminal can decode (commands can be send through telnet):
 - withdraw
 - deposit
 - stop 
+
+
+### Additionals
+
+- [lockman_net.erl](https://github.com/toxish666/erlang_repo/tree/master/erlang_course_tasks/5-Distribution-Networking/additional/lockman_net)
+
+Lockman version in network wrapper.
+
+Only those process (tcp client) who grabbed resource can release it (or release it with it's death).
+
+Commands that lockman server can decode (commands can be send through telnet):
+- acquire:$key$
+- wait:$key$
+- release:$key$
+- fire:$key$

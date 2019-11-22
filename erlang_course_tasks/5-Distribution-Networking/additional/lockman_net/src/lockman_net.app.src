@@ -1,0 +1,23 @@
+{application, lockman_net,
+ [{description, "Lockman network version"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[
+	{port, 6543}
+       ]},
+  {modules, [
+	     lockman, 
+	     lockman_listen_server, 
+	     lockman_net,
+	     lockman_serv,
+	     lockman_sup
+	    ]
+  },
+  {licenses, ["Apache 2.0"]},
+  {links, []},
+  {mod, {lockman_net, []}}
+ ]}.
