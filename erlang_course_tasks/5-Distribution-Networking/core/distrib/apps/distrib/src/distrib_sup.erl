@@ -1,8 +1,3 @@
-%%%-------------------------------------------------------------------
-%% @doc distrib top level supervisor.
-%% @end
-%%%-------------------------------------------------------------------
-
 -module(distrib_sup).
 
 -behaviour(supervisor).
@@ -29,7 +24,12 @@ init([]) ->
     SupFlags = #{strategy => one_for_all,
                  intensity => 0,
                  period => 1},
-    ChildSpecs = [],
+    ChildSpecs = [#{
+		    id => distrib_serv,
+		    start => {distrib_serv, start_link, []},
+		    restart => permanent, 
+		    shutdown => 5000,
+		    type => worker, 
+		    modules => [distrib_serv]
+		   }],
     {ok, {SupFlags, ChildSpecs}}.
-
-%% internal functions
