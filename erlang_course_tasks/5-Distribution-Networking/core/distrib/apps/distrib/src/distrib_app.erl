@@ -40,7 +40,7 @@ ensure_contact(ContactNodes) ->
             {error, no_contact_nodes_reachable};
         _ ->
 	    io:format(" Got some connection to contactnode ~n"),
-            WaitTime = 5000,
+            WaitTime = 1000,
             wait_for_nodes(length(Answering), WaitTime)
     end.
 

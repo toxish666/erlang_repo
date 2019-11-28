@@ -7,9 +7,34 @@
    [kernel,
     stdlib
    ]},
-  {env,[]},
+  {env,[
+	%% numbers here is used to reproduce complex tasks taking time
+	%% timer:sleep(N) to complete
+	{tasks_list, [
+		      100,
+		      200,
+		      300,
+		      400,
+		      500,
+		      600,
+		      700,
+		      800,
+		      900,
+		      1000,
+		      1100,
+		      1200,
+		      1300,
+		      1400,
+		      1500,
+		      1600,
+		      1700,
+		      1800,
+		      1900,
+		      2000
+		     ]
+       }
+       ]
+  },
   {modules, []},
-
-  {licenses, ["Apache 2.0"]},
   {links, []}
  ]}.

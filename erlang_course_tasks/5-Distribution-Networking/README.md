@@ -1,5 +1,13 @@
 ### Упражнения
 
+### Распределенный Erlang. Задания
+
+- [distrib](https://github.com/toxish666/erlang_repo/tree/master/erlang_course_tasks/5-Distribution-Networking/core/distrib)
+
+Every node starts distrib application. Nodes randomly choose another node in cluster so that when it's workers fail another node can restore stacked tasks and distribute them among it's workers.
+
+Tasks are distributed between workers in the round-robin manner without any pre-evaluations of their cost.
+
 ### Сетевой Erlang. Задания
 
 - [atm_net](https://github.com/toxish666/erlang_repo/tree/master/erlang_course_tasks/5-Distribution-Networking/core/atm_net)
