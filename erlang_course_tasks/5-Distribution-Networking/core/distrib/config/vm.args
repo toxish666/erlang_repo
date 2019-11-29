@@ -1,6 +1,6 @@
--sname distrib
+-sname fiva@localhost
 
--setcookie distrib_cookie
+-setcookie 'XXXXX'
 
 +K true
 +A30

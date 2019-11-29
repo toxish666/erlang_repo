@@ -1,0 +1,22 @@
+{application, statistics,
+ [
+  {description, "statisctics events manager"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {modules, [
+	     statistics, 
+	     statistics_app, 
+	     statistics_accumulator,
+	     statistics_manager,
+	     statistics_sup
+	    ]},
+  {applications,
+   [
+    kernel, 
+    stdlib
+   ]},
+  {env, []},
+  {mod, {statistics_app,[]}}
+ ]
+}.
+  

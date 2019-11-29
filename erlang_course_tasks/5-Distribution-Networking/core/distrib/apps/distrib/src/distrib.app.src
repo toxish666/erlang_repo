@@ -5,7 +5,9 @@
   {mod, {distrib_app, []}},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    rd,
+    statistics
    ]},
   {env,[
 	%% numbers here is used to reproduce complex tasks taking time
@@ -35,6 +37,12 @@
        }
        ]
   },
-  {modules, []},
+  {modules, [
+	    distrib,
+	    distrib_app,
+	    distrib_serv,
+	    distrib_sup,
+	    distrib_worker
+	    ]},
   {links, []}
  ]}.

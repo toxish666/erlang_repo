@@ -48,6 +48,7 @@ handle_cast({add_work, Lmbd}, #state{stack = Stack, replicahost = ReplicaHost} =
     % check if Lmbd comes from dead worker
     case Lmbd of
 	{replicated, Lambda} ->
+	    statistics:restarted_task(self()),
 	    Task = Lambda,
 	    send_to_replica(Task, ReplicaHost),
 	    gen_server:cast(self(), {start_work});
@@ -61,12 +62,15 @@ handle_cast({start_work}, #state{stack = Stack, replicahost = ReplicaHost} = Sta
 	[] ->
 	    {noreply, State};
 	[Lmbd | Tail] ->
+	    statistics:started_task(self()),
 	    case rand:uniform(?CHANCE_TO_FAIL) of
 		1 ->
+		    statistics:failed_task(self()),
 		    io:format("death pill~n"),
 		    {stop, normal, State};
 		_ ->
 		    Lmbd(),
+		    statistics:completed_task(self()),
 		    delete_from_replica(Lmbd, ReplicaHost),
 		    gen_server:cast(self(), {start_work}),
 		    {noreply, State#state{stack = Tail}}
