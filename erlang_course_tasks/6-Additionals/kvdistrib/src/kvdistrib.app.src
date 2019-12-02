@@ -1,0 +1,20 @@
+{application, kvdistrib,
+ [{description, "Key-value distributed storage"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {kvdistrib_app, []}},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, [
+	     kvdistrib,
+	     kvdistrib_app,
+	     kvdistrib_serv,
+	     kvdistrib_sup
+	    ]},
+
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
