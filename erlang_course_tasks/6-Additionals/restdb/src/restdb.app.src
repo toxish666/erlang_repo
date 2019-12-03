@@ -1,0 +1,16 @@
+{application, restdb,
+ [{description, "REST wrapper for mdb module"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {restdb_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    cowboy
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
