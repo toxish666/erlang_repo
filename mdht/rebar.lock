@@ -1,0 +1,4 @@
+[{<<"libsodium">>,
+  {git,"git://github.com/potatosalad/erlang-libsodium.git",
+       {ref,"aacf353461c27fc8732f69ecfcf1aaed9d81d366"}},
+  0}].
