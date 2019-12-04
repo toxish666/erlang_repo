@@ -10,7 +10,7 @@
 %% code:add_path("../../../1-basic").
 %%
 
--module(mdb_gen).
+-module(mdb_server).
 
 -behaviour(gen_server).
 
@@ -70,7 +70,6 @@ insert(Name, Key, Value) ->
 -spec find(Name :: atom(), Key :: term()) -> {ok, Value :: term()} | not_found.
 find(Name, Key) ->
     gen_server:call(Name, {find, Key}).
-
 
 %%----------------------------------------------------------------------------
 %% LIFECYCLE
