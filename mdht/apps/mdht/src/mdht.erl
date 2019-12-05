@@ -1,8 +1,8 @@
 -module(mdht).
 
 %% encrypting key types
--type publickey() :: binary().
--type privatekey() :: binary().
+-type public_key() :: binary().
+-type private_key() :: binary().
 -type nonce() :: binary().
 
 %% ordering interface type
@@ -15,8 +15,10 @@
 -type option(A) :: A | none.
 
 -export_type([
-	      publickey/0,
-	      privatekey/0,
+	      public_key/0,
+	      private_key/0,
 	      nonce/0,
-	      ordering/0
+	      ordering/0,
+	      instant/0,
+	      option/1
 	     ]).
