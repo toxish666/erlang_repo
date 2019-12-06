@@ -15,11 +15,3 @@
 		 }).
 -type socket() :: #socket{}.
 
-
-%% Way to store the node info in a small format.
-%% This record mainly built in packed_node.erl module
--record(packed_node, {
-		      saddr :: socket(),
-		      pk :: mdht:public_key()
-		     }).
--type packed_node() :: #packed_node{}.

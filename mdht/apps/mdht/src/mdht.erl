@@ -22,3 +22,5 @@
 	      instant/0,
 	      option/1
 	     ]).
+
+%libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(). 

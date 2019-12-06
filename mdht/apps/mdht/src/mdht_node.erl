@@ -22,7 +22,8 @@
 	 new_mdht_node/1,
 	 is_bad_mnode/1,
 	 is_discarded_mnode/1,
-	 get_socket_addr/1
+	 get_socket_addr/1,
+	 get_pk/1
 	]).
 
 %% Ping interval for each node in our lists.
@@ -123,10 +124,10 @@ ping_addr(SockAndTime) ->
 
 %%-----------------------------mdht_node--------------------------------
 %% @doc Create new mdht node with given socket and pk.
--spec new_mdht_node(packed_node()) -> mdht_node().
-new_mdht_node(PackedNode) ->
-    PK = PackedNode#packed_node.pk,
-    Sock = PackedNode#packed_node.saddr,
+-spec new_mdht_node(packed_node:packed_node()) -> mdht_node().
+new_mdht_node(PackedNode) ->    
+    PK = packed_node:get_pk(PackedNode),
+    Sock = packed_node:get_saddr(PackedNode),
     SockPreInfo = Sock#socket.socket_pre_info,
     {SAddrV4, SAddrV6} = case {SockPreInfo#socket_pre_info.ip4_address,
 			       SockPreInfo#socket_pre_info.ip6_address} of
@@ -168,4 +169,10 @@ get_socket_addr(MNode) ->
        true ->
 	    Assoc6#sock_and_time.saddr
     end.
+
+
+%% @doc Getter for extracting pk out of a mdht node
+-spec get_pk(mdht_node()) -> mdht:public_key().
+get_pk(MNode) ->
+    MNode#mdht_node.pk.
     

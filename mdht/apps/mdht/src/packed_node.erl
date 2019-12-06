@@ -11,9 +11,19 @@
 
 %% packed_node manipulations
 -export([
-	 new_packed_node/2
+	 new_packed_node/2,
+	 get_pk/1,
+	 get_saddr/1
 	]).
 
+%% Way to store the node info in a small format.
+%% This record mainly built in packed_node.erl module
+-record(packed_node, {
+		      saddr :: socket(),
+		      pk :: mdht:public_key()
+		     }).
+-type packed_node() :: #packed_node{}.
+-export_type([packed_node/0]).
 
 %% @doc Encoding in the next format:
 %% Length | Content
@@ -87,5 +97,14 @@ new_packed_node(Socket, PublicKey) ->
     #packed_node{saddr = Socket, pk = PublicKey}.
     
     
+%% @doc Getter for extracting pk out of a packed node
+-spec get_pk(packed_node()) -> mdht:public_key().
+get_pk(PckdN) ->
+    PckdN#packed_node.pk.
     
-    
+
+%% @doc Getter for extracting saddr out of a packed node
+-spec get_saddr(packed_node()) -> socket().
+get_saddr(PckdN) ->
+    PckdN#packed_node.saddr.
+
