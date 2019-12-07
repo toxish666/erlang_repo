@@ -153,7 +153,7 @@ try_add(KBucket, BasePK, {NewNodeT, MdhtOrPackedAtomT} = Sp , Evict) ->
 			NodeIndex ->
 			    logger:debug("No free space left in the kbucket, the last bad node removed"),
 			    %% replace the farthest bad node
-			    NodesDeleted = util:delete_nth(Nodes, NodeIndex),
+			    NodesDeleted = utils:delete_nth(Nodes, NodeIndex),
 			    NewNodes = NodesDeleted ++ [NewNode],
 			    {true, KBucket#kbucket{nodes = NewNodes}} % edge
 		    end;
@@ -216,7 +216,8 @@ remove(KBucket, BasePK, NodePK) ->
 					      end),
     case SearchRes of 
 	{some, Index} ->
-	    utils:delete_nth(Nodes, Index);
+	    {RemovedNode, NewNodes} = utils:delete_nth_tup(Nodes, Index),
+	    {RemovedNode, KBucket#kbucket{nodes = NewNodes}};
 	{error, _} ->
 	    logger:debug("No node to remove with PK: ~p", [NodePK]),
 	    none
@@ -249,7 +250,6 @@ len(KBucket) ->
 -spec capacity(kbucket()) -> non_neg_integer().
 capacity(KBucket) ->
     KBucket#kbucket.capacity.
-
 
    	    
 %% @doc distance/3 Check whether distance between PK1 and own PK is smaller than distance
@@ -408,10 +408,56 @@ kbucket_try_add_bad_nodes_test() ->
     {Bool1, KBucket1} = kbucket:try_add(KBucket, PK, {Node2, packed_node}, false),
     ?assert(Bool1),
     {Bool2, KBucket2} = kbucket:try_add(KBucket1, PK, {Node1, packed_node}, false),
-    ?assert(not(Bool2)).
-    %% replacing bad node
-    
-    
+    ?assert(not(Bool2)),
+    %%mocking time lib
+    meck:new(time, [unstick, passthrough]),
+    meck:expect(time, clock_elapsed, fun(_) -> 1000 end),
+    {Bool3, _} = kbucket:try_add(KBucket2, PK, {Node1, packed_node}, false),
+    meck:unload(time),
+    ?assert(Bool3).
+
+kbucket_try_add_bad_nodes_evict_test() ->
+    PK = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    KBucket = kbucket:new_kbucket(1, mdht),
+    Node1 = create_node_packed(12345, <<1:8, 2:8, 3:8, 4:8>>,
+			       binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
+    Node2 = create_node_packed(12346, <<1:8, 2:8, 3:8, 4:8>>,
+			       binary:copy(<<2:8>>, ?PUBLICKEYBYTES)),
+    {Bool1, KBucket1} = kbucket:try_add(KBucket, PK, {Node2, packed_node}, true),
+    ?assert(Bool1),
+    {Bool2, KBucket2} = kbucket:try_add(KBucket1, PK, {Node1, packed_node}, true),
+    ?assert(not(Bool2)),
+    %%mocking time lib
+    meck:new(time, [unstick, passthrough]),
+    meck:expect(time, clock_elapsed, fun(_) -> 1000 end),
+    {Bool3, _} = kbucket:try_add(KBucket2, PK, {Node1, packed_node}, true),
+    meck:unload(time),
+    ?assert(Bool3).
+
+kbucket_remove_test() ->
+    PK = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    Node1 = create_node_packed(12345, <<1:8, 2:8, 3:8, 4:8>>,
+			       binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
+    ?assertEqual(none,kbucket:remove(KBucket, PK, Node1)),
+    ?assert(kbucket:is_empty(KBucket)),
+    {_, KBucket1} = kbucket:try_add(KBucket, PK, {Node1, packed_node}, true),
+    ?assert(not(kbucket:is_empty(KBucket1))),
+    NPK = packed_node:get_pk(Node1),
+    {SomeNodeMdht, KBucket2} = kbucket:remove(KBucket1, PK, NPK),
+    ?assertEqual(mdht_node:to_packed_node(SomeNodeMdht), Node1),
+    ?assert(kbucket:is_empty(KBucket2)).
+
+kbucket_get_node_test() -> 
+    {PK, _} = libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(),
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    {PKN, _} = libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(),
+    Node1 = create_node_packed(12345, <<127:8, 0:8, 0:8, 1:8>>,
+			       PKN),
+    {Bool1, KBucket1} = kbucket:try_add(KBucket, PK, {Node1, packed_node}, true),
+    ?assert(Bool1),
+    ?assertNotEqual(none, kbucket:get_node(KBucket1, PK, PKN)).
+   
 %%-------- helper test functions ---------
 create_node_packed(Port, Addr, PK) ->
     SocketPreInfo = #socket_pre_info{

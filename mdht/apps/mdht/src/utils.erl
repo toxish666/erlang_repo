@@ -134,13 +134,20 @@ binary_search_by_test() ->
     ?assertEqual({error,10}, utils:binary_search_by(SomeList, FunN(13))),
     ?assertEqual({some,1}, utils:binary_search_by(SomeList, FunN(1))),
     ?assertEqual({error,1}, utils:binary_search_by(SomeList, FunN(0))),
-    ?assertEqual({error, length(SomeList)}, utils:binary_search_by(SomeList, FunN(55))).
-
+    ?assertEqual({error, length(SomeList)}, utils:binary_search_by(SomeList, FunN(55))),
+    ?assertEqual({some,1}, utils:binary_search_by([1], FunN(1))).
 
 rfind_index_test() ->
     SomeList = [1,2,3],
     ?assertEqual(3, utils:rfind_index(SomeList, fun(E) -> E == 3 end)),
     ?assertEqual(none, utils:rfind_index(SomeList, fun(E) -> E == 5 end)).
+
+delete_nth_test() ->
+    SomeList1 = [1,2,3],
+    SomeList2 = [1],
+    ?assertEqual([1,2], utils:delete_nth(SomeList1, 3)),
+    ?assertEqual([2,3], utils:delete_nth(SomeList1, 1)),
+    ?assertEqual([], utils:delete_nth(SomeList2, 1)).
     
 
 -endif.

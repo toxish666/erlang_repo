@@ -142,10 +142,10 @@ new_mdht_node(PackedNode) ->
 			       SockPreInfo#socket_pre_info.ip6_address} of
 			     {undefined, undefined} ->
 				 throw(mdht_node_incorrect);
-			     {IpV4, undefined} ->
-				 {IpV4, none};
-			     {undefined, IpV6} ->
-				 {none, IpV6}
+			     {_, undefined} ->
+				 {Sock, none};
+			     {undefined, _} ->
+				 {none, Sock}
 			 end,
     #mdht_node{
        assoc4 = new_sat(SAddrV4),
@@ -171,12 +171,23 @@ is_discarded_mnode(MNode) ->
 get_socket_addr(MNode) ->
     Assoc4 = MNode#mdht_node.assoc4,
     Assoc6 = MNode#mdht_node.assoc6,
-    Assoc4LastRespTime = Assoc4#sock_and_time.last_resp_time,
-    Assoc6LastRespTime = Assoc6#sock_and_time.last_resp_time,
-    if Assoc4LastRespTime >= Assoc6LastRespTime ->
-	    Assoc4#sock_and_time.saddr;
-       true ->
-	    Assoc6#sock_and_time.saddr
+    Assoc4Ad = Assoc4#sock_and_time.saddr,
+    Assoc6Ad = Assoc6#sock_and_time.saddr,
+    case {Assoc4Ad, Assoc6Ad} of
+	{none, none} ->
+	    none;
+	{Ass4, none} ->
+	    Ass4;
+	{none, Ass6} ->
+	    Ass6;
+	{Ass4, Ass6} ->
+	    Assoc4LastRespTime = Assoc4#sock_and_time.last_resp_time,
+	    Assoc6LastRespTime = Assoc6#sock_and_time.last_resp_time,
+	    if Assoc4LastRespTime >= Assoc6LastRespTime ->
+		    Ass4;
+	       true ->
+		    Ass6
+	    end
     end.
 
 
