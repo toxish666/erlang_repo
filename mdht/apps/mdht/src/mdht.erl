@@ -13,6 +13,7 @@
 
 %% some utility types
 -type option(A) :: A | none.
+-type either(A,B) :: {some, A} | {error, B}.
 
 -export_type([
 	      public_key/0,
@@ -20,7 +21,8 @@
 	      nonce/0,
 	      ordering/0,
 	      instant/0,
-	      option/1
+	      option/1,
+	      either/2
 	     ]).
 
 %libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(). 
