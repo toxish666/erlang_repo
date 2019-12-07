@@ -23,7 +23,8 @@
 	 is_bad_mnode/1,
 	 is_discarded_mnode/1,
 	 get_socket_addr/1,
-	 get_pk/1
+	 get_pk/1,
+	 to_packed_node/1
 	]).
 
 %% Ping interval for each node in our lists.
@@ -83,7 +84,11 @@ new_sat(SAddr) ->
 -spec is_bad_sat(sock_and_time()) -> boolean().
 is_bad_sat(SockAndTime) ->
     LastRespTime = SockAndTime#sock_and_time.last_resp_time,
-    time:clock_elapsed(LastRespTime) > ?BAD_NODE_TIMEOUT.
+    utils:map_opt_or_default(
+      LastRespTime,
+      fun(Inst) -> time:clock_elapsed(Inst) > ?BAD_NODE_TIMEOUT end,
+      true
+     ).
  
 
 %% @doc Check if the address is considered discarded i.e. it does not answer on
@@ -92,8 +97,12 @@ is_bad_sat(SockAndTime) ->
 -spec is_discarded_sat(sock_and_time()) -> boolean().
 is_discarded_sat(SockAndTime) ->
     LastRespTime = SockAndTime#sock_and_time.last_resp_time,
-    time:clock_elapsed(LastRespTime) > ?KILL_NODE_TIMEOUT.
-    
+    utils:map_opt_or_default(
+      LastRespTime,
+      fun(Inst) -> time:clock_elapsed(Inst) > ?KILL_NODE_TIMEOUT end,
+      true
+     ).
+  
 
 %% @doc Check if `PING_INTERVAL` is passed after last ping request.
 -spec is_ping_interval_passed(sock_and_time()) -> boolean().
@@ -176,3 +185,15 @@ get_socket_addr(MNode) ->
 get_pk(MNode) ->
     MNode#mdht_node.pk.
     
+
+%% @doc mdht_node to packed_node
+-spec to_packed_node(mdht_node()) -> mdht:option(packed_node:packed_node()).
+to_packed_node(MNode) ->
+    PK = MNode#mdht_node.pk,
+    case get_socket_addr(MNode) of 
+	none ->
+	    none;
+	Sock ->
+	    packed_node:new_packed_node(Sock, PK)
+    end.
+	    

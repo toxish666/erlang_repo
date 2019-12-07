@@ -23,7 +23,7 @@
 %% @doc Create new ktree structure.
 -spec new_ktree(mdht:public_key(), ets:tab()) -> ktree().
 new_ktree(PK, Ets) ->
-    logger:trace("Creating new Ktree with PK: ~p~n", [PK]),
+    logger:debug("Creating new Ktree with PK: ~p~n", [PK]),
     #ktree{pk = PK, kbuckets = Ets}.
 
 
@@ -44,10 +44,10 @@ get_node(KTree, PK) ->
 -spec try_add(ktree(), packed_node:packed_node()) -> boolean().
 try_add(KTree, PackedNode) ->
     logger:debug("Trying to add packed_node ~n"),
-    logger:trace("Trying to add packed node ~p and ktree ~p~n", [PackedNode, KTree]),
+    logger:debug("Trying to add packed node ~p and ktree ~p~n", [PackedNode, KTree]),
     case kbucket_index(KTree, packed_node:get_pk(PackedNode)) of
 	none ->
-	    logger:trace("Failed to add packed node ~p~n", [PackedNode]),
+	    logger:debug("Failed to add packed node ~p~n", [PackedNode]),
 	    false;
 	Index ->
 	    KBuckets = KTree#ktree.kbuckets,
@@ -66,10 +66,10 @@ try_add(KTree, PackedNode) ->
 	    UpdC = ets:select_replace(KBuckets, MS),
 	    case UpdC of 
 		NN when NN > 0 ->
-		    logger:trace("Succsesfully added packed node ~p~n", [PackedNode]),
+		    logger:debug("Succsesfully added packed node ~p~n", [PackedNode]),
 		    true;
 		_ ->
-		    logger:trace("Packed node ~p was not added to ~p~n", [PackedNode, KTree]),
+		    logger:debug("Packed node ~p was not added to ~p~n", [PackedNode, KTree]),
 		    false
 	    end
     end.
@@ -78,10 +78,10 @@ try_add(KTree, PackedNode) ->
 %% @doc Remove !dht_node with the given PK for the tree.
 -spec remove(ktree(), mdht:public_key()) -> mdht:option(mdht_node:mdht_node()).
 remove(KTree, PK) ->
-    logger:trace("Removing PK ~p from KTree ~p~n", [PK, KTree]),
+    logger:debug("Removing PK ~p from KTree ~p~n", [PK, KTree]),
     case kbucket_index(KTree, PK) of
 	none ->
-	    logger:trace("Failed to remove PK ~p", [PK]),
+	    logger:debug("Failed to remove PK ~p", [PK]),
 	    none;
 	Index ->
 	    KBuckets = KTree#ktree.kbuckets,

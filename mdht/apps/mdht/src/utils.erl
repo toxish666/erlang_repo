@@ -9,7 +9,8 @@
 	 binary_search_by/2,
 	 rfind_index/2,
 	 update_list_with_element/3,
-	 delete_nth/2
+	 delete_nth/2,
+	 delete_nth_tup/2
 	]).
 
 
@@ -56,9 +57,9 @@ binary_search_by(Comparator, Left, Right, OrigList ) when Left =< Right ->
     case Comparator(Item) of
 	equal -> 
 	    {some, Middle};
-	less ->
-	    binary_search_by(Comparator, Left, Middle-1,  OrigList);
 	greater ->
+	    binary_search_by(Comparator, Left, Middle-1,  OrigList);
+	less ->
 	    binary_search_by(Comparator, Middle+1, Right , OrigList)
     end.
     
@@ -118,9 +119,9 @@ binary_search_by_test() ->
 					equal;
 				   true ->
 					if E < N ->
-						greater;
+						less;
 					   true ->
-						less
+						greater
 					end
 				end
 			end

@@ -4,13 +4,16 @@
 %%% @end
 
 -module(kbucket).
+-include_lib("kernel/include/logger.hrl").
 -include("consts.hrl").
 
 %% Structure for holding nodes.
 %% Number of nodes it can contain is set during creation.
 %% Nodes in kbucket are sorted by closeness to the PK; 
 %% closest node is the first, while furthest is the last one.
+-type mode() :: mdht | packed.
 -record(kbucket, {
+		  mode :: mode(),
 		  capacity :: non_neg_integer(),
 		  nodes = [] :: list() %this list should be sorted
 		  }).
@@ -19,12 +22,12 @@
 
 %% kbucket manipulations
 -export([
-	 new_kbucket/1,
+	 new_kbucket/2,
 	 is_full/1,
 	 is_empty/1,
 	 find/3,
 	 get_node/3,
-	 try_add/5,
+	 try_add/4,
 	 remove/3,
 	 contains/3,
 	 len/1,
@@ -44,9 +47,9 @@
 
 
 %% @doc Construct new kbucket with given capacity.
--spec new_kbucket(non_neg_integer()) -> kbucket().
-new_kbucket(Capacity) ->
-    #kbucket{capacity = Capacity}.
+-spec new_kbucket(non_neg_integer(), mode()) -> kbucket().
+new_kbucket(Capacity, Mode) ->
+    #kbucket{mode = Mode, capacity = Capacity}.
 
 
 %% @doc Check if kbucket is full
@@ -100,18 +103,32 @@ get_node(KBucket, BasePK, OthPK) ->
 %% - if kbucket is full and evict = false or new node is further away than any
 %% other node in the bucket returned {false, OldKbucket}.
 %%
-%% What out for the last parameter as it points out to mdht_node format or
-%% packed_node format
 -spec try_add(
 	kbucket(), 
 	mdht:public_key(), 
-	mdht_node:mdht_node(), 
-	boolean(),
-	mdht_node | packed_node
+	{mdht_node:mdht_node(), mdht_node} | {mdht_node:packed_node(), packed_node}, 
+	boolean()
        ) ->
 	{boolean(), kbucket()}.
-try_add(KBucket, BasePK, NewNode, Evict, MdhtOrPackedAtom) ->
-    logger:trace("Trying to add new node into kbucket ~n"),
+try_add(KBucket, BasePK, {NewNodeT, MdhtOrPackedAtomT} = Sp , Evict) ->
+    logger:debug("Trying to add new node into kbucket ~p", [NewNodeT]),
+    %% convert newnode to appropriate format
+    {NewNode, MdhtOrPackedAtom}  = case KBucket#kbucket.mode of 
+				       mdht ->
+					   case MdhtOrPackedAtomT of
+					       mdht_node ->
+						   Sp;
+					       packed_node ->
+						   {mdht_node:new_mdht_node(NewNodeT), mdht_node}
+					   end;
+				       packed ->
+					   case MdhtOrPackedAtomT of
+					       mdht_node ->
+						   {mdht_node:to_packed_node(NewNodeT), packed_node};
+					       packed_node ->
+						   Sp
+					   end
+				   end,
     Nodes = KBucket#kbucket.nodes,
     SearchRes = utils:binary_search_by(Nodes, fun(N) ->
 						      MPK = MdhtOrPackedAtom:get_pk(N),
@@ -120,10 +137,10 @@ try_add(KBucket, BasePK, NewNode, Evict, MdhtOrPackedAtom) ->
 					      end),
     case SearchRes of
 	{some, Index} when is_number(Index) ->
-	    logger:debug("Updating node in kbucket ~n"),
+	    logger:debug("Updating node in kbucket"),
 	    NewNodes = utils:update_list_with_element(Nodes, Index, NewNode),
 	    {true, KBucket#kbucket{nodes = NewNodes}}; % edge
-	{none, Index} when Evict == false orelse Index == length(Nodes) ->
+	{error, Index} when Evict == false orelse Index == length(Nodes) ->
 	    %% index is pointing past the end
 	    case is_full(KBucket) of
 		true ->
@@ -131,10 +148,10 @@ try_add(KBucket, BasePK, NewNode, Evict, MdhtOrPackedAtom) ->
 		    %% so check if there's any node to throw cuz it's bad (but not evict)
 		    case NodeToThrow of
 			none ->
-			    logger:debug("Node can't be added to the kbucket ~n"),
+			    logger:debug("Node can't be added to the kbucket"),
 			    {false, KBucket}; % edge
 			NodeIndex ->
-			    logger:debug("No free space left in the kbucket, the last bad node removed ~n"),
+			    logger:debug("No free space left in the kbucket, the last bad node removed"),
 			    %% replace the farthest bad node
 			    NodesDeleted = util:delete_nth(Nodes, NodeIndex),
 			    NewNodes = NodesDeleted ++ [NewNode],
@@ -143,42 +160,47 @@ try_add(KBucket, BasePK, NewNode, Evict, MdhtOrPackedAtom) ->
 		false ->
 		    %% distance to the PK was bigger than the other keys, but
 		    %% there's still free space in the kbucket for a node
-		    logger:debug("Node inserted inside the kbucket ~n"),
+		    logger:debug("Node inserted inside the kbucket"),
 		    NewNodes = Nodes ++ [NewNode],
 		    {true, KBucket#kbucket{nodes = NewNodes}} % edge
 	    end;	
-	{none, Index}  ->
+	{error, Index}  ->
 	    %% index is pointing inside the list
 	    NodesNewPre = case is_full(KBucket) of
 			      true ->
-				  logger:debug("No free space left in the kbucket, the last node removed ~n"),
+				  logger:debug("No free space left in the kbucket, the last node removed"),
 				  lists:droplast(Nodes);
 			      false ->
 				  Nodes
 			  end,
-	    logger:debug("Node inserted inside the kbucket ~n"),
+	    logger:debug("Node inserted inside the kbucket"),
 	    NewNodes = utils:update_list_with_element(NodesNewPre, Index, NewNode),
 	    {true, KBucket#kbucket{nodes = NewNodes}} % edge
     end.
 
 %% helper function for try_add
 eviction_index(Nodes, MdhtOrPackedAtom) ->
-    DiscNodeInd = utils:rfind_index(
-		    Nodes, 
-		    fun(N) -> MdhtOrPackedAtom:is_discarded_mnode(N) end
-		   ),
-    NodeToThrow = 
-	case DiscNodeInd of 
-	    none ->
-		BadNodeInd = utils:rfind_index(
-			       Nodes, 
-			       fun(N) -> MdhtOrPackedAtom:is_bad_mnode(N) end
-			      ),
-		BadNodeInd;
-	    AnyNumber ->
-		AnyNumber
-	end,
-    NodeToThrow.
+    case MdhtOrPackedAtom of 
+	packed_node ->
+	    none;
+	mdht_node ->
+	    DiscNodeInd = utils:rfind_index(
+			    Nodes, 
+			    fun(N) -> MdhtOrPackedAtom:is_discarded_mnode(N) end
+			   ),
+	    NodeToThrow = 
+		case DiscNodeInd of 
+		    none ->
+			BadNodeInd = utils:rfind_index(
+				       Nodes, 
+				       fun(N) -> MdhtOrPackedAtom:is_bad_mnode(N) end
+				      ),
+			BadNodeInd;
+		    AnyNumber ->
+			AnyNumber
+		end,
+	    NodeToThrow
+    end.
 
 
 %% @doc Remove Node with given PK from the KBucket.
@@ -186,7 +208,7 @@ eviction_index(Nodes, MdhtOrPackedAtom) ->
 %% @end
 -spec remove(kbucket(), mdht:public_key(), mdht:public_key()) -> mdht:option({mdht_node:mdht_node(), kbucket()}).
 remove(KBucket, BasePK, NodePK) ->
-    logger:trace("Removing node with PK ~p~n", [NodePK]),
+    logger:debug("Removing node with PK ~p", [NodePK]),
     Nodes = KBucket#kbucket.nodes,
     SearchRes = utils:binary_search_by(Nodes, fun(N) ->
 						      MPK = mdht_node:get_pk(N),
@@ -196,7 +218,7 @@ remove(KBucket, BasePK, NodePK) ->
 	{some, Index} ->
 	    utils:delete_nth(Nodes, Index);
 	{error, _} ->
-	    logger:trace("No node to remove with PK: ~p~n", [NodePK]),
+	    logger:debug("No node to remove with PK: ~p", [NodePK]),
 	    none
     end.
     
@@ -239,7 +261,7 @@ capacity(KBucket) ->
       PK1 :: mdht:public_key(),
       PK2 :: mdht:public_key().
 distance_impl(OwnPK, PK1, PK2) ->
-    logger:trace("Comparing distance between PKs.~n"),
+    logger:debug("Comparing distance between PKs"),
     <<FOwnPK:8, ElseOwnPK/binary>> = OwnPK,
     <<FPK1:8, ElsePK1/binary>> = PK1,
     <<FPK2:8, ElsePK2/binary>> = PK2,
@@ -256,8 +278,7 @@ distance_impl(OwnPK, PK1, PK2) ->
 	       true ->
 		    greater
 	    end
-    end,
-    ok.
+    end.
 
 
 %% @doc Calculate the ktree index index of a PK compared
@@ -298,6 +319,7 @@ get_bucket_default_size() ->
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-include("common_records.hrl").
 
 kbucket_index_test() ->
     {PK1, _} = libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(),
@@ -311,6 +333,91 @@ kbucket_index_test() ->
     ?assertMatch(
        SomeIndex when SomeIndex =< 255 andalso SomeIndex >= 0, 
        kbucket:kbucket_index(PK2,PK3)
-    ).
+		),
+    PK4 = binary:copy(<<2#10101010:8>>, ?PUBLICKEYBYTES),
+    PK5 = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    PK6 = binary:copy(<<2#00101010:8>>, ?PUBLICKEYBYTES),
+    ?assertEqual(0, kbucket:kbucket_index(PK4,PK5)),
+    ?assertEqual(2, kbucket:kbucket_index(PK5,PK6)).
+    
+public_key_distance_test() ->
+    PK1 = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    PK2 = binary:copy(<<1:8>>, ?PUBLICKEYBYTES),
+    PK3 = binary:copy(<<2:8>>, ?PUBLICKEYBYTES),
+    PK4 = binary:copy(<<16#ff:8>>, ?PUBLICKEYBYTES),
+    PK5 = binary:copy(<<16#fe:8>>, ?PUBLICKEYBYTES),
+    ?assertEqual(less, kbucket:distance_impl(PK1,PK2,PK3)),
+    ?assertEqual(equal, kbucket:distance_impl(PK3,PK3,PK3)),
+    ?assertEqual(less, kbucket:distance_impl(PK3,PK1,PK2)),
+    ?assertEqual(greater, kbucket:distance_impl(PK3,PK4,PK5)),
+    ?assertEqual(less, kbucket:distance_impl(PK5,PK4,PK3)).
+
+kbucket_try_add_test() ->
+    PK = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    FilledKBucket = lists:foldl(fun(Int, KBuck) ->
+					SocketPreInfo = #socket_pre_info{
+							   port = 12345 + Int,
+							   ip4_address = <<1:8, 2:8, 3:8, 4:8>>},
+					Socket = #socket{socket_pre_info = SocketPreInfo},
+					PKForNode = binary:copy(<<(Int + 2):8>>, ?PUBLICKEYBYTES),
+					PackedNode = packed_node:new_packed_node(Socket,PKForNode),
+					{Bool, NewKBuck} = kbucket:try_add(
+							     KBuck,
+							     PK,
+							     {PackedNode,packed_node},
+							     false
+							    ),
+					?assert(Bool),
+					NewKBuck
+				end, KBucket, lists:seq(0,7)),
+    %% full kbucket
+    ?assertEqual(kbucket:len(FilledKBucket), kbucket:capacity(FilledKBucket)),
+    %% closer node
+    CloserNode = create_node_packed(12345, <<1:8, 2:8, 3:8, 5:8>>,
+				    binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
+    %% farther node
+    FartherNode = create_node_packed(12346, <<1:8, 2:8, 3:8, 5:8>>,
+				     binary:copy(<<10:8>>, ?PUBLICKEYBYTES)),
+    %% existing node
+    ExistingNode = create_node_packed(12347, <<1:8, 2:8, 3:8, 5:8>>,
+				      binary:copy(<<2:8>>, ?PUBLICKEYBYTES)),
+    %% can't add a new farther node
+    {Bool1, OldKBuck1} = kbucket:try_add(FilledKBucket, PK, {FartherNode,packed_node}, false),
+    ?assert(not(Bool1)),
+    %% can't add a new farther node with eviction
+    {Bool2, OldKBuck2} = kbucket:try_add(OldKBuck1, PK, {FartherNode,packed_node}, true),
+    ?assert(not(Bool2)),
+    %% can't add a new closer node
+    {Bool3, OldKBuck3} = kbucket:try_add(OldKBuck2, PK, {CloserNode,packed_node}, false),
+    ?assert(not(Bool3)),
+    %% can add a new closer node with eviction
+    {Bool4, NewKBuck1} = kbucket:try_add(OldKBuck3, PK, {CloserNode,packed_node}, true),
+    ?assert(Bool4),
+    %% can update a node
+    {Bool5, _} = kbucket:try_add(NewKBuck1, PK, {ExistingNode,packed_node}, false),
+    ?assert(Bool5).
+
+kbucket_try_add_bad_nodes_test() ->
+    PK = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    KBucket = kbucket:new_kbucket(1, mdht),
+    Node1 = create_node_packed(12345, <<1:8, 2:8, 3:8, 4:8>>,
+			       binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
+    Node2 = create_node_packed(12346, <<1:8, 2:8, 3:8, 4:8>>,
+			       binary:copy(<<2:8>>, ?PUBLICKEYBYTES)),
+    {Bool1, KBucket1} = kbucket:try_add(KBucket, PK, {Node2, packed_node}, false),
+    ?assert(Bool1),
+    {Bool2, KBucket2} = kbucket:try_add(KBucket1, PK, {Node1, packed_node}, false),
+    ?assert(not(Bool2)).
+    %% replacing bad node
+    
+    
+%%-------- helper test functions ---------
+create_node_packed(Port, Addr, PK) ->
+    SocketPreInfo = #socket_pre_info{
+		       port = Port,
+		       ip4_address = Addr},
+    Socket = #socket{socket_pre_info = SocketPreInfo},
+    packed_node:new_packed_node(Socket,PK).
 
 -endif.

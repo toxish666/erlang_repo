@@ -93,7 +93,7 @@ decode(Binary) ->
 -spec new_packed_node(socket(), mdht:public_key()) -> packed_node().
 new_packed_node(Socket, PublicKey) ->
     logger:debug("Creating new packed_node ~n"),
-    logger:trace("With args socket_address: ~p, PK: ~p ~n", [Socket, PublicKey]),
+    logger:debug("With args socket_address: ~p, PK: ~p ~n", [Socket, PublicKey]),
     #packed_node{saddr = Socket, pk = PublicKey}.
     
     
