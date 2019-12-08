@@ -10,7 +10,8 @@
 	 rfind_index/2,
 	 update_list_with_element/3,
 	 delete_nth/2,
-	 delete_nth_tup/2
+	 delete_nth_tup/2,
+	 insert_nth/3
 	]).
 
 
@@ -42,12 +43,16 @@ map_opt_or_default(Some, MapF, _) ->
 %% @end
 -spec binary_search_by(list(), fun((atom()) -> mdht:ordering())) -> mdht:either(non_neg_integer(), non_neg_integer()).
 binary_search_by(List, Comparator) ->
-    SortedList = lists:sort(List),
-    binary_search_by(Comparator, 1, length(List), SortedList).
+    case List of 
+	[] ->
+	    {error, 1};
+	_ ->
+	    binary_search_by(Comparator, 1, length(List), List)
+    end.
 
 binary_search_by(_Comparator, Left, Right, OrigList ) when Left > Right ->
     if Right == length(OrigList) ->
-	    {error, Right};
+	    {error, Right + 1};
        true ->
 	    {error, Left}
     end;
@@ -83,7 +88,7 @@ rreversed([H|L], Predicate, Position) ->
     end.
 
 
-%% @doc Update list by takin n'th element and putting there new element
+%% @doc Update list by taking n'th element and putting there new element
 -spec update_list_with_element(list(), non_neg_integer(), atom()) -> list().
 update_list_with_element(List, Nth, NewElement) ->
     {FirstPart, ElsePart} = lists:split(Nth - 1, List),
@@ -108,20 +113,29 @@ delete_nth_tup(List, Nth) ->
     {FF, FirstPart ++ E}.
 
 
+%% @doc Insert element in n'th position
+-spec insert_nth(list(), non_neg_integer(), atom()) -> list().
+insert_nth(List, Nth, Element) ->
+    {FirstPart, ElsePart} = lists:split(Nth - 1, List),
+    NewElsePart = [Element|ElsePart],
+    FirstPart ++ NewElsePart.
+
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 binary_search_by_test() ->
     SomeList = [1,2,3,4,5,6,8,9,12,14,21],
+    SomeList1 = [1,2,3,4,5,6,7],
     FunN = fun(N) -> 
 			fun(E) ->			
 				if E == N ->
 					equal;
 				   true ->
-					if E < N ->
-						less;
+					if N < E ->
+						greater;
 					   true ->
-						greater
+						less
 					end
 				end
 			end
@@ -134,8 +148,11 @@ binary_search_by_test() ->
     ?assertEqual({error,10}, utils:binary_search_by(SomeList, FunN(13))),
     ?assertEqual({some,1}, utils:binary_search_by(SomeList, FunN(1))),
     ?assertEqual({error,1}, utils:binary_search_by(SomeList, FunN(0))),
-    ?assertEqual({error, length(SomeList)}, utils:binary_search_by(SomeList, FunN(55))),
-    ?assertEqual({some,1}, utils:binary_search_by([1], FunN(1))).
+    ?assertEqual({error, length(SomeList) + 1}, utils:binary_search_by(SomeList, FunN(55))),
+    ?assertEqual({some,1}, utils:binary_search_by([1], FunN(1))),
+    ?assertEqual({error,1}, utils:binary_search_by([], FunN(2))).
+
+
 
 rfind_index_test() ->
     SomeList = [1,2,3],
@@ -148,6 +165,16 @@ delete_nth_test() ->
     ?assertEqual([1,2], utils:delete_nth(SomeList1, 3)),
     ?assertEqual([2,3], utils:delete_nth(SomeList1, 1)),
     ?assertEqual([], utils:delete_nth(SomeList2, 1)).
+
+update_list_with_element_test() ->
+    SomeList1 = [1,2],
+    ?assertEqual([3,2], utils:update_list_with_element(SomeList1, 1, 3)).
+
+insert_nth_test() ->
+    SomeList1 = [1,2],
+    ?assertEqual([3,1,2], utils:insert_nth(SomeList1, 1, 3)),
+    ?assertEqual([1,2,3], utils:insert_nth(SomeList1, 3, 3)),
+    ?assertEqual([3], utils:insert_nth([], 1, 3)).
     
 
 -endif.

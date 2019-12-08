@@ -69,6 +69,7 @@ is_empty(KBucket) ->
 		  mdht:option(non_neg_integer()).
 find(KBucket, BasePK, OthPK) ->
     Nodes = KBucket#kbucket.nodes,
+    %logger:debug("ASDASDASD ~p", [Nodes]),
     SearchRes = utils:binary_search_by(Nodes, fun(N) ->
 						      MPK = mdht_node:get_pk(N),
 						      distance_impl(BasePK, MPK, OthPK)
@@ -140,7 +141,7 @@ try_add(KBucket, BasePK, {NewNodeT, MdhtOrPackedAtomT} = Sp , Evict) ->
 	    logger:debug("Updating node in kbucket"),
 	    NewNodes = utils:update_list_with_element(Nodes, Index, NewNode),
 	    {true, KBucket#kbucket{nodes = NewNodes}}; % edge
-	{error, Index} when Evict == false orelse Index == length(Nodes) ->
+	{error, Index} when (Evict == false) orelse (Index == (KBucket#kbucket.capacity + 1)) ->
 	    %% index is pointing past the end
 	    case is_full(KBucket) of
 		true ->
@@ -164,17 +165,19 @@ try_add(KBucket, BasePK, {NewNodeT, MdhtOrPackedAtomT} = Sp , Evict) ->
 		    NewNodes = Nodes ++ [NewNode],
 		    {true, KBucket#kbucket{nodes = NewNodes}} % edge
 	    end;	
-	{error, Index}  ->
+	{error, IndexT}  ->
 	    %% index is pointing inside the list
 	    NodesNewPre = case is_full(KBucket) of
 			      true ->
 				  logger:debug("No free space left in the kbucket, the last node removed"),
+				  Index = IndexT,
 				  lists:droplast(Nodes);
 			      false ->
+				  Index = IndexT,
 				  Nodes
 			  end,
-	    logger:debug("Node inserted inside the kbucket"),
-	    NewNodes = utils:update_list_with_element(NodesNewPre, Index, NewNode),
+	    logger:debug("Node inserted inside the kbucket to the index ~p", [Index]),
+	    NewNodes = utils:insert_nth(NodesNewPre, Index, NewNode),
 	    {true, KBucket#kbucket{nodes = NewNodes}} % edge
     end.
 
@@ -261,7 +264,7 @@ capacity(KBucket) ->
       PK1 :: mdht:public_key(),
       PK2 :: mdht:public_key().
 distance_impl(OwnPK, PK1, PK2) ->
-    logger:debug("Comparing distance between PKs"),
+    logger:debug("Comparing distance between PKs ~p ~p", [PK1,PK2] ,#{domain => kbucket}),
     <<FOwnPK:8, ElseOwnPK/binary>> = OwnPK,
     <<FPK1:8, ElsePK1/binary>> = PK1,
     <<FPK2:8, ElsePK2/binary>> = PK2,
@@ -423,9 +426,9 @@ kbucket_try_add_bad_nodes_evict_test() ->
 			       binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
     Node2 = create_node_packed(12346, <<1:8, 2:8, 3:8, 4:8>>,
 			       binary:copy(<<2:8>>, ?PUBLICKEYBYTES)),
-    {Bool1, KBucket1} = kbucket:try_add(KBucket, PK, {Node2, packed_node}, true),
+    {Bool1, KBucket1} = kbucket:try_add(KBucket, PK, {Node1, packed_node}, true),
     ?assert(Bool1),
-    {Bool2, KBucket2} = kbucket:try_add(KBucket1, PK, {Node1, packed_node}, true),
+    {Bool2, KBucket2} = kbucket:try_add(KBucket1, PK, {Node2, packed_node}, true),
     ?assert(not(Bool2)),
     %%mocking time lib
     meck:new(time, [unstick, passthrough]),
@@ -458,6 +461,76 @@ kbucket_get_node_test() ->
     ?assert(Bool1),
     ?assertNotEqual(none, kbucket:get_node(KBucket1, PK, PKN)).
    
+%% Check that insertion order does not affect the result order in the ktree
+%% straight order
+kbucket_position1_test() ->
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    {BasePK, Node1, Node2, Node3} = position_data(),
+    {_, KBucket1} = kbucket:try_add(KBucket, BasePK, {Node1, packed_node}, true),
+    {_, KBucket2} = kbucket:try_add(KBucket1, BasePK, {Node2, packed_node}, true),
+    {_, KBucket3} = kbucket:try_add(KBucket2, BasePK, {Node3, packed_node}, true),
+    ?assertEqual(1,kbucket:find(KBucket3, BasePK, packed_node:get_pk(Node1))),
+    ?assertEqual(2,kbucket:find(KBucket3, BasePK, packed_node:get_pk(Node2))),
+    ?assertEqual(3,kbucket:find(KBucket3, BasePK, packed_node:get_pk(Node3))).
+
+%% reverse order
+kbucket_position2_test() ->
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    {BasePK, Node1, Node2, Node3} = position_data(),
+    {Res1, KBucket1} = kbucket:try_add(KBucket, BasePK, {Node3, packed_node}, true),
+    ?assertEqual(1,kbucket:find(KBucket1, BasePK, packed_node:get_pk(Node3))),
+    {Res2, KBucket2} = kbucket:try_add(KBucket1, BasePK, {Node2, packed_node}, true),
+    ?assertEqual(1,kbucket:find(KBucket2, BasePK, packed_node:get_pk(Node2))),
+    ?assertEqual(2,kbucket:find(KBucket2, BasePK, packed_node:get_pk(Node3))),
+    {Res3, KBucket3} = kbucket:try_add(KBucket2, BasePK, {Node1, packed_node}, true),
+    ?assert(Res1),?assert(Res2),?assert(Res3),
+    ?assertEqual(1,kbucket:find(KBucket3, BasePK, packed_node:get_pk(Node1))),
+    ?assertEqual(2,kbucket:find(KBucket3, BasePK, packed_node:get_pk(Node2))),
+    ?assertEqual(3,kbucket:find(KBucket3, BasePK, packed_node:get_pk(Node3))).
+
+%% Check that removing order does not affect the order of nodes inside
+%% first element
+kbucket_position_remove1_test() ->
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    {BasePK, Node1, Node2, Node3} = position_data(),
+    {_, KBucket1} = kbucket:try_add(KBucket, BasePK, {Node1, packed_node}, true),
+    {_, KBucket2} = kbucket:try_add(KBucket1, BasePK, {Node2, packed_node}, true),
+    {_, KBucket3} = kbucket:try_add(KBucket2, BasePK, {Node3, packed_node}, true),
+    Node1PK = packed_node:get_pk(Node1),
+    {_SomeNode ,KBucketNew} = kbucket:remove(KBucket3, BasePK, Node1PK),
+    ?assertEqual(none,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node1))),
+    ?assertEqual(1,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node2))),
+    ?assertEqual(2,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node3))).
+
+%% second element
+kbucket_position_remove2_test() ->
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    {BasePK, Node1, Node2, Node3} = position_data(),
+    {_, KBucket1} = kbucket:try_add(KBucket, BasePK, {Node1, packed_node}, true),
+    {_, KBucket2} = kbucket:try_add(KBucket1, BasePK, {Node2, packed_node}, true),
+    {_, KBucket3} = kbucket:try_add(KBucket2, BasePK, {Node3, packed_node}, true),
+    Node2PK = packed_node:get_pk(Node2),
+    {_SomeNode ,KBucketNew} = kbucket:remove(KBucket3, BasePK, Node2PK),
+    ?assertEqual(1,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node1))),
+    ?assertEqual(none,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node2))),
+    ?assertEqual(2,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node3))).
+
+%% third element
+kbucket_position_remove3_test() ->
+    KBucket = kbucket:new_kbucket(?KBUCKET_DEFAULT_SIZE, mdht),
+    {BasePK, Node1, Node2, Node3} = position_data(),
+    {_, KBucket1} = kbucket:try_add(KBucket, BasePK, {Node1, packed_node}, true),
+    {_, KBucket2} = kbucket:try_add(KBucket1, BasePK, {Node2, packed_node}, true),
+    {_, KBucket3} = kbucket:try_add(KBucket2, BasePK, {Node3, packed_node}, true),
+    Node3PK = packed_node:get_pk(Node3),
+    {_SomeNode ,KBucketNew} = kbucket:remove(KBucket3, BasePK, Node3PK),
+    ?assertEqual(1,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node1))),
+    ?assertEqual(2,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node2))),
+    ?assertEqual(none,kbucket:find(KBucketNew, BasePK, packed_node:get_pk(Node3))).
+
+
+
+
 %%-------- helper test functions ---------
 create_node_packed(Port, Addr, PK) ->
     SocketPreInfo = #socket_pre_info{
@@ -466,4 +539,23 @@ create_node_packed(Port, Addr, PK) ->
     Socket = #socket{socket_pre_info = SocketPreInfo},
     packed_node:new_packed_node(Socket,PK).
 
+position_data() ->
+    PK = binary:copy(<<3:8>>, ?PUBLICKEYBYTES),
+    <<_:8, ElsePK/binary>> = PK,
+    PK1 = <<1:8, ElsePK/binary>>,
+    %% packed node 1
+    PK2 = <<(binary:part(PK1, 0, 4))/binary, 1:8, (binary:part(PK1, 5, byte_size(PK1) - 5))/binary>>,
+    ?assertEqual(32, size(PK2)),
+    PackedNode1 = create_node_packed(12345, <<0:8,0:8,0:8,0:8>>, PK2),
+    %% packed node 2
+    PK3 = <<(binary:part(PK2, 0, 9))/binary, 2:8, (binary:part(PK2, 10, byte_size(PK2) - 10))/binary>>,
+    ?assertEqual(32, size(PK3)),
+    PackedNode2 = create_node_packed(12346, <<0:8,0:8,0:8,0:8>>, PK3),
+    %% packed node 3
+    PK4 = <<(binary:part(PK3, 0, 13))/binary, 4:8, (binary:part(PK3, 14, byte_size(PK2) - 14))/binary>>,
+    ?assertEqual(32, size(PK4)),
+    PackedNode3 = create_node_packed(12347, <<0:8,0:8,0:8,0:8>>, PK4),
+    {PK1, PackedNode1, PackedNode2, PackedNode3}.
+
+    
 -endif.
