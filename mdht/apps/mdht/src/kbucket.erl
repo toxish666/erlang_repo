@@ -31,7 +31,8 @@
 	 remove/3,
 	 contains/3,
 	 len/1,
-	 capacity/1
+	 capacity/1,
+	 get_nodes/1
 	]).
 
 %% kbucket utilities
@@ -314,6 +315,11 @@ kbucket_index(OwnPK, OtherPK) ->
 	SomeVal -> SomeVal
     end.
 
+%% @doc Get all nodes in list format
+-spec get_nodes(kbucket()) -> list().
+get_nodes(KBucket) ->
+    KBucket#kbucket.nodes.
+    
 
 %% @doc Get bucket default size.
 get_bucket_default_size() ->

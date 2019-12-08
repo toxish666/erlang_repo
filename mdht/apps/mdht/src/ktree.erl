@@ -15,11 +15,15 @@
 	 try_add/2,
 	 remove/2,
 	 pk/1,
-	 is_empty/1
+	 is_empty/1,
+	 get_closest/3,
+	 contains/2,
+	 ktree_to_list/1
 	]).
 %% some iteration-like functions
 -export([
-	 on_ets_all/2
+	 on_ets_all/2,
+	 ets_to_list/1
 	]).
 %% constant extracting alias
 -export([
@@ -126,25 +130,89 @@ is_empty(KTree) ->
 			 end).
 
 
+%% @doc Get N closest nodes to given PK
+%% Returns less than N nodes only if ktree contains less than N nodes
+%% @end
+-spec get_closest(ktree(), mdht:public_key(), non_neg_integer()) -> kbucket:kbucket().
+get_closest(KTree, PK, Count) ->
+    logger:debug("Getting closes nodes with PK ~p", [PK]),
+    NewKBucket = kbucket:new_kbucket(Count, packed),
+    KBuckets = KTree#ktree.kbuckets,
+    KNodesList = ets_to_list(KBuckets),
+    FilteredKNodesList = lists:filter(fun(MDhtNode) -> not(mdht_node:is_bad_mnode(MDhtNode)) end, KNodesList),
+    FilledNewKBucket = lists:foldl(fun(MDhtNode,KBuck) ->
+					   case mdht_node:to_packed_node(MDhtNode) of 
+					       none ->
+						   KBuck; 
+					       PackedNode ->
+						   {_, NewKBuck} = 
+						       kbucket:try_add(KBuck,
+								       PK,
+								       {PackedNode, packed_node},
+								       true),
+						   NewKBuck
+					   end
+				   end, NewKBucket, FilteredKNodesList),
+    FilledNewKBucket.
+				
+
+%% @doc Check if ktree contains packed_node with given PK
+-spec contains(ktree(), mdht:public_key()) -> boolean().
+contains(KTree, PK) ->
+    BasePK = KTree#ktree.pk,
+    KBuckets = KTree#ktree.kbuckets,
+    case kbucket_index(KTree, PK) of
+	none ->
+	    false;
+	Index ->
+	    MS = ets:fun2ms(fun(N = #ind_kbucket{index = IndexB}) when IndexB == Index -> N end),
+	    case ets:select(KBuckets, MS) of
+		[] ->
+		    false;	
+		[#ind_kbucket{kbucket = KBucket} | _] ->
+		    kbucket:contains(KBucket, BasePK, PK)
+	    end
+    end.
+
+%% @doc Same as @link{ets_to_list} referring to internal ets structure.
+-spec ktree_to_list(ktree()) -> list().
+ktree_to_list(KTree) ->
+    ets_to_list(KTree#ktree.kbuckets).
+
 %% @doc Function on ets that iterates through all values; returns true if 
 %% predicate is true for all elements of the ets.
 %% @end
 -spec on_ets_all(ets:tab(), fun((any()) -> boolean())) -> boolean().
 on_ets_all(Ets, Predicate) ->    
-    FirstKey = ets:first(Ets),
+    FirstKey = ets:last(Ets),
     on_ets_all_loop(Ets, Predicate, FirstKey).
 
 on_ets_all_loop(_, _, '$end_of_table') ->
     true;
 on_ets_all_loop(Ets, Predicate, Key) ->    
     [Rec|_] = ets:lookup(Ets, Key),
-    logger:debug("ARWRWR ~p", [Rec]),
     case Predicate(Rec) of
 	false ->
 	    false;
 	true ->
-	    on_ets_all_loop(Ets, Predicate, ets:next(Ets, Key))
+	    on_ets_all_loop(Ets, Predicate, ets:prev(Ets, Key))
     end.
+
+
+%% @doc Return elements flatten list of nodes from all buckets.
+%% Note that elements are sorted by distance to a base PK is ascending order.
+%% @end
+-spec ets_to_list(ets:tab()) -> list().
+ets_to_list(Ets) ->    
+    FirstKey = ets:first(Ets),
+    ets_to_list_loop(Ets, FirstKey, []).
+
+ets_to_list_loop(_, '$end_of_table', Acc) ->
+    Acc;
+ets_to_list_loop(Ets, Key, Acc) ->    
+    [#ind_kbucket{kbucket = KBucket}|_] = ets:lookup(Ets, Key),
+    KBucketNodes = kbucket:get_nodes(KBucket),
+    ets_to_list_loop(Ets, ets:next(Ets, Key), KBucketNodes ++ Acc).
     
 
 %% Return the possible internal index of KBucket where the key could be inserted/removed.
@@ -169,7 +237,10 @@ ktree_manipulations_test_() ->
      {"New ktree can be created", ?setup(fun ktree_new_t/1)},
      {"Testing try_add functionals", ?setup(fun ktree_try_add_t/1)},
      {"Can't add to the tree with the same PK", ?setup(fun ktree_try_add_self_t/1)},
-     {"Correct removing of elements in ktree", ?setup(fun ktree_remove_t/1)}
+     {"Correct removing of elements in ktree", ?setup(fun ktree_remove_t/1)},
+     {"Get closest nodes correctly", ?setup(fun ktree_get_closest_t/1)},
+     {"Contains properly determine wheter element is in", ?setup(fun ktree_contains_t/1)},
+     {"KTree to list works normally", ?setup(fun ktree_to_list_t/1)}
     ].
 
 %% --------- setup ------------
@@ -242,6 +313,75 @@ ktree_remove_t(Ets) ->
      ?_assertNotEqual(none, RemoveRes2),
      ?_assert(IsEmptyRes3)
     ].
+
+ktree_get_closest_t(Ets) ->
+    PK = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    NewKTree = ktree:new_ktree(PK, Ets),
+    FF = fun(N) ->
+		 SocketPreInfo = #socket_pre_info{
+				    port = 12345 + N,
+				    ip4_address = <<1:8, 2:8, 3:8, 4:8>>
+				   },
+		 Socket = #socket{socket_pre_info = SocketPreInfo},
+		 PKForNode = binary:copy(<<(N + 1):8>>, ?PUBLICKEYBYTES),
+		 PackedNode = packed_node:new_packed_node(Socket,PKForNode),
+		 PackedNode
+	 end,
+    lists:foldl(fun(Int, KTree) ->
+			PackedNode = FF(Int),
+		        ktree:try_add(KTree, PackedNode),
+			KTree
+		end, NewKTree, lists:seq(0,7)),
+    TList = lists:foldl(fun(Int, ToTests) ->
+				Nodes = kbucket:get_nodes(ktree:get_closest(NewKTree, PK, Int)),
+				ShouldBe = lists:map(
+					     fun(Ind) ->
+						 FF(Ind)    
+					     end,
+					     lists:seq(0,(Int-1))
+					    ),
+				[{Nodes, ShouldBe} | ToTests]
+			end, [], lists:seq(1,4)),
+    lists:map(fun({Nodes, ShouldBe}) ->
+		      ?_assertEqual(Nodes, ShouldBe)
+	      end, TList).
+
+ktree_contains_t(Ets) ->
+    {PK, _} = libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(),
+    NewKTree = ktree:new_ktree(PK, Ets),
+    ContRes1 = ktree:contains(NewKTree, PK),
+    {PKN, _} = libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(),
+    SomeNode = create_node_packed(12346, <<1:8, 2:8, 3:8, 5:8>>, PKN),
+    ContRes2 = ktree:contains(NewKTree, PKN),
+    Bool = ktree:try_add(NewKTree, SomeNode),
+    ContRes3 = ktree:contains(NewKTree, PKN),
+    [?_assert(not(ContRes1)),
+     ?_assert(not(ContRes2)),
+     ?_assert(Bool),
+     ?_assert(ContRes3)
+    ].
+
+ktree_to_list_t(Ets) ->
+    PK = binary:copy(<<0:8>>, ?PUBLICKEYBYTES),
+    KTree = ktree:new_ktree(PK, Ets),
+    EmptyKTree = ktree:ktree_to_list(KTree),
+    FilledKTree = lists:foldl(fun(Int, KTree) ->
+				      PKForNode = binary:copy(<<(Int + 1):8>>, ?PUBLICKEYBYTES),
+				      PackedNode = 
+					  create_node_packed((12345+Int),
+							       <<1:8, 2:8, 3:8, 4:8>>,
+							       PKForNode),
+				      ktree:try_add(KTree, PackedNode),
+				      KTree
+			      end, KTree, lists:seq(0,7)),
+    FilledKTreeSize = length(ktree:ktree_to_list(KTree)),
+    TL = lists:foldl(fun({I, Node}, ToTests) ->
+			     [?_assertEqual(mdht_node:get_pk(Node), 
+					    binary:copy(<<(I+1):8>>, ?PUBLICKEYBYTES))
+			      | ToTests]
+		     end, [], lists:zip(lists:seq(0,7), ktree:ktree_to_list(KTree))),
+    TL ++ [?_assertEqual([], EmptyKTree),?_assertEqual(8, FilledKTreeSize)].
+   
 
 
 %%-------- helper test functions ---------
