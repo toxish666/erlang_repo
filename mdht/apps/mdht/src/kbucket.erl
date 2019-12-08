@@ -530,7 +530,6 @@ kbucket_position_remove3_test() ->
 
 
 
-
 %%-------- helper test functions ---------
 create_node_packed(Port, Addr, PK) ->
     SocketPreInfo = #socket_pre_info{

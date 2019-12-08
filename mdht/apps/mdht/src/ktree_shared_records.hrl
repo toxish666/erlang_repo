@@ -11,4 +11,4 @@
 
 
 %% This structure will be stored into the ets.
--record(ind_kbucket, {index, kbucket}).
+-record(ind_kbucket, {index :: non_neg_integer(), kbucket :: kbucket:kbucket()}).
