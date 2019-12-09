@@ -27,6 +27,11 @@ generate_nonce() ->
     libsodium_randombytes:randombytes(?NONCEBYTES).
 
 
+%% @doc Generate random tag.
+generate_tag() ->
+    libsodium_randombytes:randombytes(?TAGBYTES).
+
+
 %% @doc Get combined key out of public key and secret key
 generate_combined_key(PK, SK) ->
     libsodium_crypto_box_curve25519xsalsa20poly1305:beforenm(PK, SK).

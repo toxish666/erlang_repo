@@ -5,14 +5,10 @@
 %% 0,..   | payload
 %% All other packet types are wrapped inside this format:
 %% Value  | Packet Kind
-%% 16#00  | ping request :TODO:
-%% 16#01  | ping response :TODO:
-%% 16#02  | nodes request :TODO:
-%% 16#03  | nodes response :TODO:
-%% 16#05  | dht request
+%% 16#05  | 'dht close request' 
 %% 16#a5  | bootstrap info  :TODO:
 %% 
-%% Dht packet of the format (dht request): 
+%% 'Dht close request' packet is of the format: 
 %% Length | Content
 %% 32     | sender's public key
 %% 24     | nonce
@@ -37,24 +33,34 @@
 %% 1      | number of nodes in the response (up to 4)
 %% ..     | nodes in packed node format
 %%
+%%-----------------------------------------------------------
+%% 
+%%
 %% @end
 
 
 -module(mdht_proto).
 -include("consts.hrl").
 
--export([decode/1]).
+-export([decode/1, encode/2]).
+
+-type decoded_result() :: 
+	{ok, Tag :: binary(), ping_request, RequestId :: binary()} |
+	{ok, Tag :: binary(), ping_response, RequestId :: binary()} |
+	{ok, Tag :: binary(), {nodes_request, PK :: mdht:public_key()}, RequestId :: binary()} | 
+	{ok, Tag :: binary(), {nodes_response, PackedNodes :: list()}, RequestId :: binary()} |
+	{error, ErrorType :: atom()}.
 
 
-%% @doc Decode given packet according to specification
--spec decode(binary) -> any().
+%% @doc Decode given packet according to specification.
+-spec decode(binary()) -> decoded_result().
 decode(<<16#05:8, DhtPacket/binary>>) ->
-    decode_dht_packet(DhtPacket);
+    decode_dht_close(DhtPacket);
 decode(_) ->
     {error, unknown_packet_type}.
 
 
-decode_dht_packet(<<SenderPublicKey:32/binary,
+decode_dht_close(<<SenderPublicKey:32/binary,
 		    Nonce:24/binary,
 		    EncryptedPayload/binary>>) ->
     %% make request to encryption_server to 
@@ -65,14 +71,13 @@ decode_dht_packet(<<SenderPublicKey:32/binary,
 	{ok, BinaryMsg} ->
 	    decode_dht_packet_service(BinaryMsg)
     end;
-decode_dht_packet(_) ->
+decode_dht_close(_) ->
     {error, wrong_dht_packet_format}.
 
 
 decode_dht_packet_service(<<Tag:16/binary, 16#00:8, ReqId:8/binary>>) -> 
     {ok, Tag, ping_request, ReqId};
-decode_dht_packet_service(<<Tag:16/binary, 16#01:8, ReqId:8/binary>>) ->	
-    {ok, Tag, ping_response, ReqId};
+decode_dht_packet_service(<<Tag:16/binary, 16#01:8, ReqId:8/binary>>) ->           {ok, Tag, ping_response, ReqId};
 decode_dht_packet_service(<<Tag:16/binary, 16#02:8, RequestedPK:32/binary, ReqId:8/binary>>) ->
     {ok, Tag, {nodes_request, RequestedPK}, ReqId};
 decode_dht_packet_service(<<Tag:16/binary, 16#03:8, LeftBinary/binary>>) ->
@@ -121,9 +126,71 @@ decode_nodes_response_parse(_, _, _, _) ->
     {error, malformed_nodes}.
 
 
+%% @doc Encode given tuple to appropriate binary form.
+encode({Request, RequestId}, <<ReceiverPK:32/binary>>) ->
+    case encode_request(Request, RequestId, ReceiverPK) of
+	{ok, Binary} ->
+	    Binary;
+	{error, _Reason} = Err ->
+	    Err
+    end;	    
+encode(_, _) ->
+    {error, unknown_encode_format}.
+
+encode_request(ping_request, RequestId, <<ReceiverPK:32/binary>>) ->
+    {OwnPK, Nonce, Tag} = receive_pk_nonce_tag(),
+    MsgToEncrypt = <<Tag/binary, 16#00:8, RequestId/binary>>,
+    case encryption_server:encrypt_message(MsgToEncrypt, Nonce, ReceiverPK) of
+	{ok, EncryptedMsg} ->
+	    {ok,<<16#05:8, OwnPK/binary, Nonce/binary, EncryptedMsg/binary>>};
+	_ ->
+	    {error, wrong_encryption}
+    end;
+encode_request(ping_response, RequestId, ReceiverPK) ->
+    {OwnPK, Nonce, Tag} = receive_pk_nonce_tag(),
+    MsgToEncrypt = <<Tag/binary, 16#01:8, RequestId/binary>>,
+    case encryption_server:encrypt_message(MsgToEncrypt, Nonce, ReceiverPK) of
+	{ok, EncryptedMsg} ->
+	    {ok,<<16#05:8, OwnPK/binary, Nonce/binary, EncryptedMsg/binary>>};
+	_ ->
+	    {error, wrong_encryption}
+    end;
+encode_request({nodes_request, <<PublicKey:32/binary>>}, RequestId, ReceiverPK) ->
+    {OwnPK, Nonce, Tag} = receive_pk_nonce_tag(),
+    MsgToEncrypt = <<Tag/binary, 16#02:8, PublicKey:32/binary, RequestId/binary>>,
+    case encryption_server:encrypt_message(MsgToEncrypt, Nonce, ReceiverPK) of
+	{ok, EncryptedMsg} ->
+	    {ok,<<16#05:8, OwnPK/binary, Nonce/binary, EncryptedMsg/binary>>};
+	_ ->
+	    {error, wrong_encryption}
+    end;
+%% packednodes in list format
+encode_request({nodes_response, PackedNodes}, RequestId, ReceiverPK) ->
+    {OwnPK, Nonce, Tag} = receive_pk_nonce_tag(), 
+    NN = <<(length(PackedNodes)):8>>,
+    EncodedPackedNodes = lists:foldr(fun(Node, Bin) ->
+					     EncN = packed_node:encode(Node),
+					     <<EncN/binary, Bin/binary>>
+				     end, <<>>, PackedNodes),
+    MsgToEncrypt = <<Tag/binary, 16#03:8, NN/binary, EncodedPackedNodes/binary, RequestId/binary>>, 
+    case encryption_server:encrypt_message(MsgToEncrypt, Nonce, ReceiverPK) of
+	{ok, EncryptedMsg} ->
+	    {ok,<<16#05:8, OwnPK/binary, Nonce/binary, EncryptedMsg/binary>>};
+	_ ->
+	  {error, wrong_encryption}
+    end;
+encode_request( _, _, _) ->
+    {error, unknown_request}.
+
+receive_pk_nonce_tag() ->
+    {ok, OwnPK} = encryption_server:get_pk(),
+    {ok, Nonce} = encryption_server:get_nonce(),
+    {ok, Tag} = encryption_server:get_tag(),
+    {OwnPK, Nonce, Tag}.
+    
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-
 
 decode_wrong_packed_type_test() ->
     WrongBinary = <<16#ff:8, 1:8, 2:8, 3:8>>,
@@ -214,6 +281,36 @@ decode_nodes_response_test() ->
     CompleteResponse3 = <<OKBinary1T/binary, SomeTag/binary, ResponseCode/binary, RightPart3/binary>>,
     ?assertEqual({ok, SomeTag, {nodes_response, [Node1S, Node5S, Node3S, Node7S]}, ReqId2}, 
 		 mdht_proto:decode(CompleteResponse3)),
+    meck:unload(encryption_server).
+
+encode_decode_test() ->
+    meck:new(encryption_server, [unstick, passthrough]),
+    meck:expect(encryption_server, decrypt_message, fun(Encrypted, _, _) -> {ok,Encrypted} end),
+    meck:expect(encryption_server, encrypt_message, fun(Binary, _, _) -> {ok,Binary} end),
+    meck:expect(encryption_server, get_pk, fun() -> {ok, binary:copy(<<0:8>>, ?SECRETKEYBYTES)} end),
+    meck:expect(encryption_server, get_nonce, fun() -> {ok, binary:copy(<<0:8>>, ?NONCEBYTES)} end),
+    meck:expect(encryption_server, get_tag, fun() -> {ok, binary:copy(<<0:8>>, ?TAGBYTES)} end),
+    %% encode ping_request, ping_response
+    ReqId1 = binary:copy(<<0:8>>, ?REQUESTBYTES),
+    ReceiverPK1 = binary:copy(<<1:8>>, ?PUBLICKEYBYTES),
+    Req1 = ping_request,
+    Encoded1 = mdht_proto:encode({Req1, ReqId1},ReceiverPK1),
+    ?assertNotMatch({error, _}, Encoded1),
+    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded1)),
+    Req2 = ping_response,
+    Encoded2 = mdht_proto:encode({Req2, ReqId1},ReceiverPK1),
+    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded2)),
+    %% nodes request
+    Req3 = {nodes_request, ReceiverPK1},
+    Encoded3 = mdht_proto:encode({Req3, ReqId1},ReceiverPK1),
+    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded3)),
+    %% nodes response
+    Node1 = packed_node:create_node_packed_ipv4(12345, <<1:8, 2:8, 3:8, 4:8>>,
+			       binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
+    Req4 = {nodes_response, [Node1]},
+    Encoded4 = mdht_proto:encode({Req4, ReqId1},ReceiverPK1),
+    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded4)),
+
     meck:unload(encryption_server).
 
 

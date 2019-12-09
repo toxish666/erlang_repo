@@ -14,8 +14,11 @@
 %% public api
 -export([
 	 start_link/1,
-	 decrypt_message/3
-	 %encrypt_message/3
+	 decrypt_message/3,
+	 encrypt_message/3,
+	 get_pk/0,
+	 get_nonce/0,
+	 get_tag/0
 	]).
 
 %% public apis
@@ -26,6 +29,17 @@ start_link(MDhtServerPid) ->
 decrypt_message(Ciphered, Nonce, SenderPublicKey) ->
     gen_server:call(?MODULE, {decrypt, {Ciphered, Nonce, SenderPublicKey}}).
 
+encrypt_message(PlayinText, Nonce, ReceiverPublicKey) ->
+    gen_server:call(?MODULE, {encrypt, {PlayinText, Nonce, ReceiverPublicKey}}).
+
+get_pk() ->
+    gen_server:call(?MODULE, {get_pk}).
+
+get_nonce() ->
+    gen_server:call(?MODULE, {get_nonce}).
+
+get_tag() ->
+    gen_server:call(?MODULE, {get_tag}).
 
 %% Gen server callbacks
 init(MDhtServerPid) ->
@@ -46,7 +60,26 @@ handle_call({decrypt, {Ciphered, Nonce, SenderPublicKey}}, _From, MDhtServerPid)
 	    {reply, {error, decryption_error}, MDhtServerPid};
 	Correct when is_binary(Correct) ->
 	    {reply, {ok, Correct}, MDhtServerPid}
-    end.
+    end;
+handle_call({encrypt, {PlainText, Nonce, ReceiverPublicKey}}, _From, MDhtServerPid) ->
+    %% get our own pk
+    {ok, OwnSK} = gen_server:call(MDhtServerPid, {get_sk}),
+    EcryptedBin = mdht_encryption:encrypt_packet(PlainText, Nonce, ReceiverPublicKey, OwnSK),
+    case EcryptedBin of 
+	-1 ->
+	    {reply, {error, decryption_error}, MDhtServerPid};
+	Correct when is_binary(Correct) ->
+	    {reply, {ok, EcryptedBin}, MDhtServerPid}
+    end;
+handle_call({get_pk}, _From, MDhtServerPid) ->
+    {ok, PK} = gen_server:call(MDhtServerPid, {get_pk}),
+    {reply, {ok, PK}, MDhtServerPid};
+handle_call({get_nonce}, _From, MDhtServerPid) ->
+    Nonce = mdht_encryption:generate_nonce(),
+    {reply, {ok, Nonce}, MDhtServerPid};
+handle_call({get_tag}, _From, MDhtServerPid) ->
+    Tag = mdht_encryption:generate_tag(),
+    {reply, {ok, Tag}, MDhtServerPid}.
 
 handle_cast(Msg, State) ->
     {noreply, State}.
