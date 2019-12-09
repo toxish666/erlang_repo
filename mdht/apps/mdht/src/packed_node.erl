@@ -13,7 +13,9 @@
 -export([
 	 new_packed_node/2,
 	 get_pk/1,
-	 get_saddr/1
+	 get_saddr/1,
+	 create_node_packed_ipv4/3,
+	 create_node_packed_ipv6/3
 	]).
 
 %% Way to store the node info in a small format.
@@ -44,15 +46,13 @@ encode(PackedNode) ->
 			   %% ipv4 version
 			   undefined ->
 			       FormatBB = <<2:8>>,
-			       {I1,I2,I3,I4} = _IpV4Addr = SPreInfo#socket_pre_info.ip4_address,
-			       AddrBB = <<I1:8,I2:8,I3:8,I4:8>>,
-			       {FormatBB, AddrBB};
+			       <<_I1:8,_I2:8,_I3:8,_I4:8>> = IpV4Addr = SPreInfo#socket_pre_info.ip4_address,
+			       {FormatBB, IpV4Addr};
 			   %% ipv6 version
 			   IpV6 ->
 			       FormatBB = <<10:8>>,
-			       {I1,I2,I3,I4,I5,I6,I7,I8} = IpV6,
-			       AddrBB = <<I1:16,I2:16,I3:16,I4:16,I5:16,I6:16,I7:16,I8:16>>,
-			       {FormatBB, AddrBB}
+			       <<_I1:16,_I2:16,_I3:16,_I4:16,_I5:16,_I6:16,_I7:16,_I8:16>> = IpV6,
+			       {FormatBB, IpV6}
 		     end,
     <<FormatB/binary, AddrB/binary, PortB/binary, PublicKey/binary>>.
 
@@ -67,14 +67,14 @@ decode(Binary) ->
 	case Format of 
 	    2 ->
 		<<I1:8,I2:8,I3:8,I4:8, AfterAddressBinary/binary>> =  AfterFormatBinary,
-		Address = {I1,I2,I3,I4};
+		Address = <<I1:8,I2:8,I3:8,I4:8>>;
 	    10 ->
 		<<I1:16,I2:16,I3:16,I4:16,
 		  I5:16,I6:16,I7:16,I8:16, AfterAddressBinary/binary>> = AfterFormatBinary,
-		Address = {I1,I2,I3,I4,I5,I6,I7,I8}
+		Address = <<I1:16,I2:16,I3:16,I4:16,I5:16,I6:16,I7:16,I8:16>>
 	end,
 	<<Port:16, AfterPortBinary/binary>> = AfterAddressBinary,
-	<<PublicKey:32>> = AfterPortBinary,
+	<<PublicKey:(32*8)/bitstring>> = AfterPortBinary,
 	%% construct new packed_node
 	case Format of 
 	    2 ->
@@ -108,3 +108,40 @@ get_pk(PckdN) ->
 get_saddr(PckdN) ->
     PckdN#packed_node.saddr.
 
+%% @doc Create new ipv4 packed node
+create_node_packed_ipv4(Port, Addr, PK) ->
+    SocketPreInfo = #socket_pre_info{
+		       port = Port,
+		       ip4_address = Addr},
+    Socket = #socket{socket_pre_info = SocketPreInfo},
+    packed_node:new_packed_node(Socket,PK).
+
+%% @doc Create new ipv6 packed node
+create_node_packed_ipv6(Port, Addr, PK) ->
+    SocketPreInfo = #socket_pre_info{
+		       port = Port,
+		       ip6_address = Addr},
+    Socket = #socket{socket_pre_info = SocketPreInfo},
+    packed_node:new_packed_node(Socket,PK).
+
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-include("consts.hrl").
+
+decode_encode_test() ->
+    Node1 = create_node_packed_ipv4(12345, <<1:8, 2:8, 3:8, 4:8>>,
+				    binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
+    Encoded1 = encode(Node1),
+    ?assertEqual(39, size(Encoded1)),
+    Decoded1 = decode(Encoded1),
+    ?assertEqual(Node1, Decoded1),
+    IpV6Addr = binary:copy(<<16#CD00:16>>, 8),
+    Node2 = create_node_packed_ipv6(12345, IpV6Addr,
+				    binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
+    Encoded2 = encode(Node2),
+    ?assertEqual(51, size(Encoded2)),
+    Decoded2 = decode(Encoded2),
+    ?assertEqual(Node2, Decoded2).
+
+-endif.

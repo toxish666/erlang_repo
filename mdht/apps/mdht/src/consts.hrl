@@ -5,3 +5,7 @@
 -define(KBUCKET_DEFAULT_SIZE, 8).
 
 -define(KBUCKET_MAX_ENTRIES, 255).
+
+-define(TAGBYTES, 16).
+
+-define(REQUESTBYTES, 8).

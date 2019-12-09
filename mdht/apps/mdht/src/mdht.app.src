@@ -7,7 +7,10 @@
    [kernel,
     stdlib
    ]},
-  {env,[]},
+  {env,[
+	{port, 5799},
+	{bootstrap_nodes, []}
+       ]},
   {modules, []},
 
   {licenses, ["Apache 2.0"]},
