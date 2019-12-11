@@ -9,6 +9,8 @@
 %% For ktree record
 -include("ktree_shared_records.hrl").
 
+-define(CLOSEST_NODES_AMOUNT, 4).
+
 %% behaviour exports
 -export([
 	 init/1, 
@@ -25,7 +27,8 @@
 	 stop/0,
 	 get_node/1,
 	 start_ktree/1,
-	 notify_pinged/1
+	 notify_pinged/1,
+	 get_closest/1
 	]).
 
 
@@ -38,6 +41,9 @@ stop() ->
 
 get_node(PK) ->
     gen_server:call(?MODULE, {get_node, PK}).
+
+get_closest(PK) ->
+    gen_server:call(?MODULE, {get_closest, PK}).
 
 start_ktree(PK) ->
     gen_server:cast(?MODULE, {start_ktree, PK}).
@@ -55,7 +61,11 @@ handle_call({get_node, PK}, _From, KTree) ->
     {reply, GetNodeRes, KTree};
 handle_call({try_add, PackedNode}, _From, KTree) ->
     GetTryAdd = ktree:try_add(KTree, PackedNode),
-    {reply, GetTryAdd, KTree}.
+    {reply, GetTryAdd, KTree};
+handle_call({get_closest, PK}, _From, KTree) ->
+    BucketOfNodes = ktree:get_closest(KTree, PK, ?CLOSEST_NODES_AMOUNT),
+    ClosestNodes = kbucket:get_nodes(BucketOfNodes),
+    {reply, ClosestNodes, KTree}.
 
 handle_cast({start_ktree, PK}, _) ->
     ?MODULE = ets:new(?MODULE, [

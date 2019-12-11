@@ -40,7 +40,13 @@ encode(PackedNode) ->
     SPreInfo = SAddr#socket.socket_pre_info,
     %% check for socket options and convert in to binary format
     Port = SPreInfo#socket_pre_info.port,
-    PortB = <<Port:16>>,
+    PortB = case Port of
+		P when is_integer(P) ->
+		     <<Port:16>>;
+		P when is_list(P) ->
+		    PN = list_to_integer(P),
+		    <<PN:16>>
+	    end,
     PublicKey = PackedNode#packed_node.pk, % already in binary format
     {FormatB, AddrB} = case SPreInfo#socket_pre_info.ip6_address of
 			   %% ipv4 version

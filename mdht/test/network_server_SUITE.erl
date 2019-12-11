@@ -52,16 +52,16 @@ groups() -> [{somet,
 
 test(Config) ->
     %% fiva1 node in mdht_node format       
-    {Name1, Port1} = lists:keyfind('fiva1@localhost', 1, Config),
-
+    {Name1, PortT} = lists:keyfind('fiva1@localhost', 1, Config),
+    Port1 = erlang:list_to_integer(PortT),
     {ok, PK1} = rpc:call(Name1, gen_server, call, [mdht_server, {get_pk}]),
     SomeNodePacked = packed_node:create_node_packed_ipv4(Port1, <<127:8,0:8,0:8,1:8>>, PK1),
     SomeNodeMdht = mdht_node:new_mdht_node(SomeNodePacked),  
     network_server:ping(SomeNodeMdht),
     timer:sleep(2001),
-
+    
     {ok, PKM} = gen_server:call(mdht_server, {get_pk}),
-    MyNodePacked = packed_node:create_node_packed_ipv4("5799", <<127:8,0:8,0:8,1:8>>, PKM),
+    MyNodePacked = packed_node:create_node_packed_ipv4(5799, <<127:8,0:8,0:8,1:8>>, PKM),
     MyNodeMdht = mdht_node:new_mdht_node(MyNodePacked),
     Res = rpc:call(Name1, network_server, ping, [MyNodeMdht]),
     timer:sleep(2001),

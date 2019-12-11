@@ -42,7 +42,7 @@ ping(MDhtNode) ->
 
 %% @doc Get closest nodes to some given key
 get_closest(MDhtNode, PKIntrested) ->   
-    docommand_async(MDhtNode, {get_closest, PKIntrested}).
+    docommand_async(MDhtNode, {nodes_request, PKIntrested}).
 
 %%%%%%%%%%%%%%%%%%%%%%%
 %% Gen server callbacks
@@ -94,7 +94,8 @@ handle_info({udp, Socket, IP, Port, Packet}, #state{waiting_queries = WaitingQue
 		%% if there is no value found, than it's probably timeouted
 		%% so ignore it
 		false ->
-		    logger:debug("Ignored ping response");
+		    logger:debug("Ignored ping response"),
+		    {noreply, State};
 		%% found it
 		FoundKey ->
 		    %% notify mdht_server that node was pinged and returned res
@@ -105,7 +106,7 @@ handle_info({udp, Socket, IP, Port, Packet}, #state{waiting_queries = WaitingQue
 	    end;
 	%% if it's a ping request -- send ping response
 	{ok, SenderPublicKey, {ping_request, RequestId}} ->
-	    io:format("ping request has come"),
+	    io:format("ping request has came"),
 	    %% we may receive pind request from unknown node
 	    %% so we need to check if this is one of the closest nodes
 	    %% let mdht_server handle this case 
@@ -122,6 +123,37 @@ handle_info({udp, Socket, IP, Port, Packet}, #state{waiting_queries = WaitingQue
 		    {noreply, State};
 		Binary when is_binary(Binary) ->
 		    logger:debug("Send ping response"),
+		    gen_udp:send(Socket, IP, Port, Binary),
+		    {noreply, State}
+	    end;
+	%% nodes_response has came
+	{ok, SenderPublicKey, {{nodes_response, PackedNodes}, RequestId}} ->
+	    io:format("nodes response has came ~n"),
+	    KeysList = maps:keys(WaitingQueries),
+	    case lists:keyfind(RequestId, 1, KeysList) of
+		%% if there is no value found, than it's probably timeouted
+		%% so ignore it
+		false ->
+		    logger:debug("Ignored nodes response"),
+		    {noreply, State};
+		%% found it
+		FoundKey ->
+		    %% tell server to handle result
+		    mdht_server:notify_nodes_responded(SenderPublicKey, PackedNodes, RequestId),
+		    io:format("with nodes: ~p~n", [PackedNodes]),
+		    WaitingQueriesThrown = maps:remove(FoundKey, WaitingQueries),
+		    {noreply, State#state{waiting_queries = WaitingQueriesThrown}}
+	    end;
+	%% nodes_request has came
+	{ok, SenderPublicKey, {{nodes_request, RequestedPK}, RequestId}} ->
+	    ClosestNodes = ktree_server:get_closest(RequestedPK),
+	    InnerMessage = {nodes_response, ClosestNodes},
+	    case assemble_message(SenderPublicKey, RequestId, InnerMessage) of
+		{error, ErrReason} ->
+		    logger:debug("Wrong nodes_response response assembled with err ~p", [ErrReason]),
+		    {noreply, State};
+		Binary when is_binary(Binary) ->
+		    logger:debug("Send nodes response"),
 		    gen_udp:send(Socket, IP, Port, Binary),
 		    {noreply, State}
 	    end
@@ -174,7 +206,7 @@ extract_ip_port(TargetAddress) ->
 		     IPV4 ->
 			 IPV4
 		 end,
-	    {list_to_tuple(binary:bin_to_list(IP)), list_to_integer(Port)};
+	    {list_to_tuple(binary:bin_to_list(IP)), Port};
 	_ ->
 	    {none,none}
     end.

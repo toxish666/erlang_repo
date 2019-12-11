@@ -45,10 +45,10 @@
 -export([decode/1, encode/2]).
 
 -type decoded_result() :: 
-	{ok, Tag :: binary(), ping_request, RequestId :: binary()} |
-	{ok, Tag :: binary(), ping_response, RequestId :: binary()} |
-	{ok, Tag :: binary(), {nodes_request, PK :: mdht:public_key()}, RequestId :: binary()} | 
-	{ok, Tag :: binary(), {nodes_response, PackedNodes :: list()}, RequestId :: binary()} |
+	{ok, PK :: mdht:public_key(), {ping_request, RequestId :: binary()}} |
+	{ok, PK :: mdht:public_key(), {ping_response, RequestId :: binary()}} |
+	{ok, PK :: mdht:public_key(), {{nodes_request, PK :: mdht:public_key()}, RequestId :: binary()}} | 
+	{ok, PK :: mdht:public_key(), {{nodes_response, PackedNodes :: list()}, RequestId :: binary()}} |
 	{error, ErrorType :: atom()}.
 
 

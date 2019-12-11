@@ -100,7 +100,7 @@ get_node(KBucket, BasePK, OthPK) ->
 ping_node(KBucket, BasePK, OthPK) ->
     case find(KBucket, BasePK, OthPK) of
 	none ->
-	    none;
+	    {false, KBucket};
 	Nth ->
 	    Nodes = KBucket#kbucket.nodes,
 	    MDhtNode = lists:nth(Nth, Nodes),

@@ -19,7 +19,8 @@
 %% private functions 
 -export([
 	 notify_pinged/1,
-	 check_from_ping/3
+	 check_from_ping/3,
+	 notify_nodes_responded/3
 	]).
 
 -define(ENCRYPTION_SUP, encryption_sup).
@@ -54,8 +55,22 @@ notify_pinged(PackedNode) ->
     ok.
 
 check_from_ping(PublicKey, IP, Port) ->
+    PackedNode = case binary:list_to_bin(tuple_to_list(IP)) of
+		     IPB when size(IPB) == 4 ->
+			 packed_node:create_node_packed_ipv4(integer_to_list(Port),
+							     IPB, PublicKey);
+		     IPB when size(IPB) == 8 ->
+			 packed_node:create_node_packed_ipv6(integer_to_list(Port),
+							     IPB, PublicKey)
+		 end,
+    gen_server:cast(?MODULE, {notify_pinged, PackedNode}),
     ok.
 
+notify_nodes_responded(SenderPublicKey, PackedNodes, RequestId) ->
+    ok.
+
+%%%%%%%
+%% behaviour
 init([ServSuperVisor]) ->
     self() ! {start_encryption_supervisor, ServSuperVisor},
     {ok, #server{supervisor_pid = ServSuperVisor}}.
