@@ -18,7 +18,8 @@
 	 is_empty/1,
 	 get_closest/3,
 	 contains/2,
-	 ktree_to_list/1
+	 ktree_to_list/1,
+	 ping_node/2
 	]).
 %% some iteration-like functions
 -export([
@@ -38,18 +39,43 @@ new_ktree(PK, Ets) ->
     #ktree{pk = PK, kbuckets = Ets}.
 
 
-%% @doc get node by it's PK.
+%% @doc Get node by it's PK.
 -spec get_node(ktree(), mdht:public_key()) -> mdht:option(mdht_node:mdht_node()).
 get_node(KTree, PK) ->
+    KTreeETS = KTree#ktree.kbuckets,
     case kbucket_index(KTree, PK) of
 	none ->
 	    none;
 	Index ->
-	    [KBucket | _] = ets:lookup(KTree, Index),
+	    [KBucket | _] = ets:lookup(KTreeETS, Index),
 	    SelfPK = KTree#ktree.pk,
 	    kbucket:get_node(KBucket, SelfPK, PK)
     end.
   
+%% @doc Ping node.
+-spec ping_node(ktree(), mdht:public_key()) -> boolean().
+ping_node(KTree, PK) ->
+    KTreeETS = KTree#ktree.kbuckets,
+    case kbucket_index(KTree, PK) of
+	none ->
+	    false;
+	Index ->
+	    %% whether this is a new node or not!
+	    case ets:lookup(KTreeETS, Index) of
+		[] ->
+		    io:format("No ets were found ~n"),
+		    false;
+		[#ind_kbucket{kbucket = KBucket}| _] ->
+		    SelfPK = KTree#ktree.pk,
+		    case kbucket:ping_node(KBucket, SelfPK, PK) of
+			{false, _} ->
+			    false;
+			{true, KBucketUp} ->
+			    ets:update_element(KTreeETS, Index, {#ind_kbucket.kbucket, KBucketUp})
+		    end
+	    end
+    end.
+    
   
 %% @doc Add !packed_node to ktree
 -spec try_add(ktree(), packed_node:packed_node()) -> boolean().

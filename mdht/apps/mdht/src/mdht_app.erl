@@ -16,3 +16,5 @@ stop(_State) ->
     ok.
 
 %% internal functions
+
+%erl -pa "../../libsodium/ebin" -eval "application:set_env([{mdht, [{test_port, 7777}]}])" -eval "application:start(mdht)"

@@ -69,23 +69,29 @@ decode_dht_close(<<SenderPublicKey:32/binary,
 	{error, Reason} ->
 	    {error, Reason, dht_packed_payload_undecrypted};
 	{ok, BinaryMsg} ->
-	    decode_dht_packet_service(BinaryMsg)
+	    case decode_dht_packet_service(BinaryMsg) of
+		{error, _} = Err ->
+		    Err;
+		Response ->
+		    {ok, SenderPublicKey, Response}
+	    end
     end;
 decode_dht_close(_) ->
     {error, wrong_dht_packet_format}.
 
 
-decode_dht_packet_service(<<Tag:16/binary, 16#00:8, ReqId:8/binary>>) -> 
-    {ok, Tag, ping_request, ReqId};
-decode_dht_packet_service(<<Tag:16/binary, 16#01:8, ReqId:8/binary>>) ->           {ok, Tag, ping_response, ReqId};
-decode_dht_packet_service(<<Tag:16/binary, 16#02:8, RequestedPK:32/binary, ReqId:8/binary>>) ->
-    {ok, Tag, {nodes_request, RequestedPK}, ReqId};
-decode_dht_packet_service(<<Tag:16/binary, 16#03:8, LeftBinary/binary>>) ->
+decode_dht_packet_service(<<_Tag:16/binary, 16#00:8, ReqId:8/binary>>) -> 
+    {ping_request, ReqId};
+decode_dht_packet_service(<<_Tag:16/binary, 16#01:8, ReqId:8/binary>>) ->
+    {ping_response, ReqId};
+decode_dht_packet_service(<<_Tag:16/binary, 16#02:8, RequestedPK:32/binary, ReqId:8/binary>>) ->
+    {{nodes_request, RequestedPK}, ReqId};
+decode_dht_packet_service(<<_Tag:16/binary, 16#03:8, LeftBinary/binary>>) ->
     case decode_dht_packet_service_nodes_response(LeftBinary) of
 	{error, _} = Error ->
 	    Error;
 	{_NumberOfNodes, PackedNodes, ReqId} ->
-	    {ok, Tag, {nodes_response, PackedNodes}, ReqId}
+	    {{nodes_response, PackedNodes}, ReqId}
     end;
 decode_dht_packet_service(_) ->
     {error, malformed_request_packet}.
@@ -210,7 +216,7 @@ decode_dht_packet_test() ->
 decode_dht_packet_service_test() ->
     {SomePK,_} = mdht_encryption:generate_crypto_pair(),
     Nonce = mdht_encryption:generate_nonce(),
-    WrongBinary = <<16#05:8, SomePK/binary, Nonce/binary, 1:8, 2:8>>,
+    WrongBinary = <<16#05:8, SomePK/binary, Nonce/binary, 25:8, 2:8>>,
     meck:new(encryption_server, [unstick, passthrough]),
     meck:expect(encryption_server, decrypt_message, fun(Encrypted, _, _) -> {ok,Encrypted} end),
     ?assertEqual({error, malformed_request_packet}, mdht_proto:decode(WrongBinary)),
@@ -220,11 +226,11 @@ decode_dht_packet_service_test() ->
     ReqId = binary:copy(<<0:8>>, ?REQUESTBYTES),
     OKBinary1 = <<OKBinary1T/binary, SomeTag/binary, PingCode/binary, ReqId/binary>>,
     %% correct ping request
-    ?assertEqual({ok, SomeTag, ping_request, ReqId}, mdht_proto:decode(OKBinary1)),
+    ?assertEqual({ok, SomePK, {ping_request, ReqId}}, mdht_proto:decode(OKBinary1)),
     GetNodes = <<16#02:8>>,
     OKBinary2 = <<OKBinary1T/binary, SomeTag/binary, GetNodes/binary, SomePK/binary, ReqId/binary>>,
     %% correct get_nodes request
-    ?assertEqual({ok, SomeTag, {nodes_request, SomePK}, ReqId}, mdht_proto:decode(OKBinary2)),
+    ?assertEqual({ok, SomePK, {{nodes_request, SomePK}, ReqId}}, mdht_proto:decode(OKBinary2)),
     meck:unload(encryption_server).
 
 decode_nodes_response_test() ->
@@ -250,7 +256,7 @@ decode_nodes_response_test() ->
     ReqId1 = binary:copy(<<0:8>>, ?REQUESTBYTES),
     RightPart1 = <<NodesReq1/binary, ReqId1/binary>>,
     CompleteResponse1 = <<OKBinary1T/binary, SomeTag/binary, ResponseCode/binary, RightPart1/binary>>,
-    ?assertEqual({ok, SomeTag, {nodes_response, [Node1S, Node2S, Node3S]}, ReqId1}, 
+    ?assertEqual({ok, SomePK, {{nodes_response, [Node1S, Node2S, Node3S]}, ReqId1}}, 
 		 mdht_proto:decode(CompleteResponse1)),
     %% 4 ipv6 nodes
     NN2 = <<4:8>>,
@@ -271,7 +277,7 @@ decode_nodes_response_test() ->
     ReqId2 = binary:copy(<<0:8>>, ?REQUESTBYTES),
     RightPart2 = <<NodesReq2/binary, ReqId2/binary>>,
     CompleteResponse2 = <<OKBinary1T/binary, SomeTag/binary, ResponseCode/binary, RightPart2/binary>>,
-    ?assertEqual({ok, SomeTag, {nodes_response, [Node4S, Node5S, Node6S, Node7S]}, ReqId2}, 
+    ?assertEqual({ok, SomePK, {{nodes_response, [Node4S, Node5S, Node6S, Node7S]}, ReqId2}}, 
 		 mdht_proto:decode(CompleteResponse2)),
     %% mixed 1 ipv4 1 ipv6 1 ipv4 1 ipv6
     NN3 = <<4:8>>,
@@ -279,7 +285,7 @@ decode_nodes_response_test() ->
     ReqId3 = binary:copy(<<0:8>>, ?REQUESTBYTES),
     RightPart3 = <<NodesReq3/binary, ReqId3/binary>>,
     CompleteResponse3 = <<OKBinary1T/binary, SomeTag/binary, ResponseCode/binary, RightPart3/binary>>,
-    ?assertEqual({ok, SomeTag, {nodes_response, [Node1S, Node5S, Node3S, Node7S]}, ReqId2}, 
+    ?assertEqual({ok, SomePK, {{nodes_response, [Node1S, Node5S, Node3S, Node7S]}, ReqId2}}, 
 		 mdht_proto:decode(CompleteResponse3)),
     meck:unload(encryption_server).
 
@@ -296,21 +302,20 @@ encode_decode_test() ->
     Req1 = ping_request,
     Encoded1 = mdht_proto:encode({Req1, ReqId1},ReceiverPK1),
     ?assertNotMatch({error, _}, Encoded1),
-    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded1)),
+    ?assertMatch({ok, _, _}, mdht_proto:decode(Encoded1)),
     Req2 = ping_response,
     Encoded2 = mdht_proto:encode({Req2, ReqId1},ReceiverPK1),
-    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded2)),
+    ?assertMatch({ok, _, _}, mdht_proto:decode(Encoded2)),
     %% nodes request
     Req3 = {nodes_request, ReceiverPK1},
     Encoded3 = mdht_proto:encode({Req3, ReqId1},ReceiverPK1),
-    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded3)),
+    ?assertMatch({ok, _, _}, mdht_proto:decode(Encoded3)),
     %% nodes response
     Node1 = packed_node:create_node_packed_ipv4(12345, <<1:8, 2:8, 3:8, 4:8>>,
 			       binary:copy(<<1:8>>, ?PUBLICKEYBYTES)),
     Req4 = {nodes_response, [Node1]},
     Encoded4 = mdht_proto:encode({Req4, ReqId1},ReceiverPK1),
-    ?assertMatch({ok, _, _, _}, mdht_proto:decode(Encoded4)),
-
+    ?assertMatch({ok, _, _}, mdht_proto:decode(Encoded4)),
     meck:unload(encryption_server).
 
 

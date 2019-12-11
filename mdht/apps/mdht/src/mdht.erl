@@ -1,4 +1,5 @@
 -module(mdht).
+-behaviour(application).
 
 %% encrypting key types
 -type public_key() :: binary().
@@ -25,4 +26,11 @@
 	      either/2
 	     ]).
 
-%libsodium_crypto_box_curve25519xsalsa20poly1305:keypair(). 
+%% behaviour
+-export([start/2, stop/1]).
+
+start(_Type, _Args) ->
+	mdht_sup:start_link().
+
+stop(_State) ->
+	ok.

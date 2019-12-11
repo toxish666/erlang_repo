@@ -18,7 +18,8 @@
 	 encrypt_message/3,
 	 get_pk/0,
 	 get_nonce/0,
-	 get_tag/0
+	 get_tag/0,
+	 get_request_id/0
 	]).
 
 %% public apis
@@ -41,8 +42,12 @@ get_nonce() ->
 get_tag() ->
     gen_server:call(?MODULE, {get_tag}).
 
+get_request_id() ->
+    gen_server:call(?MODULE, {get_request_id}).
+
 %% Gen server callbacks
 init(MDhtServerPid) ->
+    self() ! {assign_to_server},
     {ok, MDhtServerPid}.
 
 terminate(_Reason, _State) ->
@@ -79,10 +84,16 @@ handle_call({get_nonce}, _From, MDhtServerPid) ->
     {reply, {ok, Nonce}, MDhtServerPid};
 handle_call({get_tag}, _From, MDhtServerPid) ->
     Tag = mdht_encryption:generate_tag(),
-    {reply, {ok, Tag}, MDhtServerPid}.
+    {reply, {ok, Tag}, MDhtServerPid};
+handle_call({get_request_id}, _From, MDhtServerPid) ->
+    RequestId = mdht_encryption:generate_request_id(),
+    {reply, {ok, RequestId}, MDhtServerPid}.
 
-handle_cast(Msg, State) ->
+
+handle_cast(_Msg, State) ->
     {noreply, State}.
     
-handle_info(Msg, State) ->
-    {noreply, State}.
+handle_info({assign_to_server}, MDhtServerPid) ->
+    {PK, SK} = mdht_encryption:generate_crypto_pair(),
+    gen_server:cast(MDhtServerPid, {assigned_keys, PK, SK}),
+    {noreply, MDhtServerPid}.

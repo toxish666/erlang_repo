@@ -13,7 +13,9 @@
 	 encrypt_packet/4,
 	 encrypt_packet/3,
 	 decrypt_packet/4,
-	 decrypt_packet/3
+	 decrypt_packet/3,
+	 generate_request_id/0,
+	 generate_tag/0	 
 	]).
 
 
@@ -30,6 +32,10 @@ generate_nonce() ->
 %% @doc Generate random tag.
 generate_tag() ->
     libsodium_randombytes:randombytes(?TAGBYTES).
+
+%% @doc Generate random requestid.
+generate_request_id() ->
+    libsodium_randombytes:randombytes(?REQUESTBYTES).
 
 
 %% @doc Get combined key out of public key and secret key

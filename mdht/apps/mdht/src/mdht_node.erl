@@ -24,7 +24,8 @@
 	 is_discarded_mnode/1,
 	 get_socket_addr/1,
 	 get_pk/1,
-	 to_packed_node/1
+	 to_packed_node/1,
+	 ping_addr_update/1
 	]).
 
 %% Ping interval for each node in our lists.
@@ -130,6 +131,7 @@ ping_addr(SockAndTime) ->
       end,
       none
      ).
+    
 
 %%-----------------------------mdht_node--------------------------------
 %% @doc Create new mdht node with given socket and pk.
@@ -207,4 +209,35 @@ to_packed_node(MNode) ->
 	Sock ->
 	    packed_node:new_packed_node(Sock, PK)
     end.
-	    
+
+
+%% @doc Update pinged field and return mdhtnode.
+ping_addr_update(MNode) ->
+    Assoc4 = MNode#mdht_node.assoc4,
+    Assoc6 = MNode#mdht_node.assoc6,
+    Assoc4Ad = Assoc4#sock_and_time.saddr,
+    Assoc6Ad = Assoc6#sock_and_time.saddr,
+    {SockAndTime, V} = case {Assoc4Ad, Assoc6Ad} of
+			   {none, none} ->
+			       none;
+			   {Assoc4, none} ->
+			       {Assoc4, v4};
+			   {none, Assoc6} ->
+			       {Assoc6, v6};
+			   {_, _} ->
+			       Assoc4LastRespTime = Assoc4#sock_and_time.last_resp_time,
+			       Assoc6LastRespTime = Assoc6#sock_and_time.last_resp_time,
+			       if Assoc4LastRespTime >= Assoc6LastRespTime ->
+				       {Assoc4, v4};
+				  true ->
+				       {Assoc6, v6}
+			       end
+		       end,
+    SockAndTimeUp = SockAndTime#sock_and_time{last_resp_time = time:clock_now()},
+    case V of
+	v4 ->
+	    MNode#mdht_node{assoc4 = SockAndTimeUp};
+	v6 ->
+	    MNode#mdht_node{assoc6 = SockAndTimeUp}
+    end.
+    

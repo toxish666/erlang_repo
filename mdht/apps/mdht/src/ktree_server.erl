@@ -21,15 +21,17 @@
 
 %% api
 -export([
-	 start_link/1,
+	 start_link/0,
 	 stop/0,
-	 get_node/1
+	 get_node/1,
+	 start_ktree/1,
+	 notify_pinged/1
 	]).
 
 
 %% Server will get PublicKey and create ktree from it.
-start_link(PublicKey) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [PublicKey], []).
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 stop() ->
     gen_server:call(?MODULE, stop).
@@ -37,20 +39,16 @@ stop() ->
 get_node(PK) ->
     gen_server:call(?MODULE, {get_node, PK}).
 
+start_ktree(PK) ->
+    gen_server:cast(?MODULE, {start_ktree, PK}).
+
+notify_pinged(PackedNode) ->
+    gen_server:cast(?MODULE, {notify_pinged, PackedNode}).
 
 %% Gen server callbacks
 %% Initialize new ets that will be out 
-init(PublicKey) ->
-    ?MODULE = ets:new(?MODULE, [
-				ordered_set, 
-				named_table, 
-				protected,
-				{keypos, #ind_kbucket.index}
-			       ]),
-    %% creating new ktree struc that will be the state
-    NewKTree = ktree:new_ktree(PublicKey, ?MODULE),
-    {ok, NewKTree}.
-
+init([]) ->
+    {ok, {}}.
 
 handle_call({get_node, PK}, _From, KTree) ->
     GetNodeRes = ktree:get_node(KTree, PK),
@@ -59,11 +57,30 @@ handle_call({try_add, PackedNode}, _From, KTree) ->
     GetTryAdd = ktree:try_add(KTree, PackedNode),
     {reply, GetTryAdd, KTree}.
 
-
-
-handle_cast(_, State) ->
-    {noreply, State}.
-
+handle_cast({start_ktree, PK}, _) ->
+    ?MODULE = ets:new(?MODULE, [
+				ordered_set, 
+				named_table, 
+				protected,
+				{keypos, #ind_kbucket.index}
+			       ]),
+    %% creating new ktree struc that will be the state
+    NewKTree = ktree:new_ktree(PK, ?MODULE),
+    {noreply, NewKTree};
+handle_cast({notify_pinged, PackedNode}, KTree) ->
+    PK = packed_node:get_pk(PackedNode),
+    io:format("Start pinging a node ~n"),
+    case ktree:ping_node(KTree, PK) of
+        false ->
+	    io:format("Notify pinged node can't be found, trying to add it ~n"),
+	    ktree:try_add(KTree, PackedNode),
+	    {noreply, KTree};
+	true ->
+	    io:format("Pinged successfuly updated"),
+	    {noreply, KTree}
+    end.
+	    
+	   
 
 handle_info(_, State) ->
     {noreply, State}.

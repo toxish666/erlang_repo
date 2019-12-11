@@ -32,7 +32,8 @@
 	 contains/3,
 	 len/1,
 	 capacity/1,
-	 get_nodes/1
+	 get_nodes/1,
+	 ping_node/3
 	]).
 
 %% kbucket utilities
@@ -70,7 +71,6 @@ is_empty(KBucket) ->
 		  mdht:option(non_neg_integer()).
 find(KBucket, BasePK, OthPK) ->
     Nodes = KBucket#kbucket.nodes,
-    %logger:debug("ASDASDASD ~p", [Nodes]),
     SearchRes = utils:binary_search_by(Nodes, fun(N) ->
 						      MPK = mdht_node:get_pk(N),
 						      distance_impl(BasePK, MPK, OthPK)
@@ -93,6 +93,21 @@ get_node(KBucket, BasePK, OthPK) ->
 	    Nodes = KBucket#kbucket.nodes,
 	    lists:nth(Nth, Nodes)
     end.
+
+
+%% @doc Ping node.
+-spec ping_node(kbucket(), mdht:public_key(), mdht:public_key()) -> {boolean(),kbucket()}.
+ping_node(KBucket, BasePK, OthPK) ->
+    case find(KBucket, BasePK, OthPK) of
+	none ->
+	    none;
+	Nth ->
+	    Nodes = KBucket#kbucket.nodes,
+	    MDhtNode = lists:nth(Nth, Nodes),
+	    UpdatedRec = mdht_node:ping_addr_update(MDhtNode),
+	    NodesUp = utils:update_list_with_element(Nodes, Nth, UpdatedRec),
+	    {true, KBucket#kbucket{nodes = NodesUp}}
+    end. 
 
 
 %% @doc Try to add new node to the kbucket.
