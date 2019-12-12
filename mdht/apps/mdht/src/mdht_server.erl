@@ -28,6 +28,8 @@
 
 -define(FINDTIMEOUT, 5000).
 -define(FINDNODEPROPAGATION, 2).
+-define(PINGTIMETICK, 4000).
+-define(GETCLOSESTTICK, 10000).
 -define(ENCRYPTION_SUP, encryption_sup).
 -define(SPEC_ENCRYPTION_SUP,
         #{
@@ -63,6 +65,7 @@ find(PublicKeyToFind) ->
     
 
 %% private functions
+%% updates info about node or add it to the ktree if it's one of the closest node
 notify_pinged(PackedNode) ->
     gen_server:cast(?MODULE, {notify_pinged, PackedNode}),
     ok.
@@ -93,6 +96,9 @@ number_of_nodes_to_propagate() ->
 %%%%%%%
 %% behaviour
 init([ServSuperVisor]) ->
+    %% start timers
+    _PingTimerRef = time:send_after(?PINGTIMETICK, ?MODULE, {ping_tick}),
+    _NodesReqTimerRef = time:send_after(?GETCLOSESTTICK, ?MODULE, {nodes_tick}),
     self() ! {start_encryption_supervisor, ServSuperVisor},
     {ok, #server{supervisor_pid = ServSuperVisor}}.
     
@@ -164,8 +170,40 @@ handle_info({start_encryption_supervisor, Sup}, State) ->
 	    ok = supervisor:terminate_child(Sup, AtmSup),
 	    self() ! {start_encryption_supervisor, Sup}
     end;
+handle_info({ping_tick}, State) ->
+    %% get closest nodes
+    ClosestNodes = ktree_server:ktree_to_list(),
+    %% send ping request to these nodes
+    case ClosestNodes of
+	[] ->
+	    ignore;
+	_ ->
+	    lists:foreach(fun(N) -> 
+				  network_server:ping(N)
+			  end, ClosestNodes)
+    end,
+    %% restart timer
+    time:send_after(?PINGTIMETICK, ?MODULE, {ping_tick}),
+    {noreply, State};
+handle_info({nodes_tick}, #server{pk = PK} = State) ->
+    OwnPK = PK,
+    ClosestNodes = ktree_server:get_closest(OwnPK),
+    ClosestNodesDefine = trim_nodes(ClosestNodes),
+    %% send get nodes request to these nodes
+    case ClosestNodesDefine of
+	[] ->
+	    ignore;
+	_ ->
+	    lists:foreach(fun(N) -> 
+				  NMDHT = mdht_node:new_mdht_node(N),
+				  network_server:get_closest(NMDHT, OwnPK)
+			  end, ClosestNodesDefine)
+    end,	
+    %% restart timer
+    time:send_after(?GETCLOSESTTICK, ?MODULE, {nodes_tick}),
+    {noreply, State};
 handle_info(Msg, State) ->
-    logger:debug("Unexpected message in mdht_server: ~p", [Msg]),
+    logger:debug("Unexpected message in mdht_server: ~p~n", [Msg]),
     {noreply, State}.
 
 

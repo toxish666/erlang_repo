@@ -28,7 +28,8 @@
 	 get_node/1,
 	 start_ktree/1,
 	 notify_pinged/1,
-	 get_closest/1
+	 get_closest/1,
+	 ktree_to_list/0
 	]).
 
 
@@ -51,6 +52,9 @@ start_ktree(PK) ->
 notify_pinged(PackedNode) ->
     gen_server:cast(?MODULE, {notify_pinged, PackedNode}).
 
+ktree_to_list() ->
+    gen_server:call(?MODULE, {ktree_to_list}).
+
 %% Gen server callbacks
 %% Initialize new ets that will be out 
 init([]) ->
@@ -65,7 +69,10 @@ handle_call({try_add, PackedNode}, _From, KTree) ->
 handle_call({get_closest, PK}, _From, KTree) ->
     BucketOfNodes = ktree:get_closest(KTree, PK, ?CLOSEST_NODES_AMOUNT),
     ClosestNodes = kbucket:get_nodes(BucketOfNodes),
-    {reply, ClosestNodes, KTree}.
+    {reply, ClosestNodes, KTree};
+handle_call({ktree_to_list}, _From, KTree) ->
+    KTreeList = ktree:ktree_to_list(KTree),
+    {reply, KTreeList, KTree}.
 
 handle_cast({start_ktree, PK}, _) ->
     ?MODULE = ets:new(?MODULE, [
@@ -82,11 +89,11 @@ handle_cast({notify_pinged, PackedNode}, KTree) ->
     io:format("Start pinging a node ~n"),
     case ktree:ping_node(KTree, PK) of
         false ->
-	    io:format("Notify pinged node can't be found, trying to add it ~n"),
+	    io:format("Notify pinged node can't be found, trying to add it (probably a self node) ~n"),
 	    ktree:try_add(KTree, PackedNode),
 	    {noreply, KTree};
 	true ->
-	    io:format("Pinged successfuly updated"),
+	    io:format("Pinged successfuly updated ~n"),
 	    {noreply, KTree}
     end.
 	    

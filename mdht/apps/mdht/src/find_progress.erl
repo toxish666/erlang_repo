@@ -21,7 +21,6 @@ handle_event({nodes_response, SenderPublicKey, PackedNodes},
 	     #state{key_to_find = KeyToFind, ref = Ref, from = From} = State) ->
     %% when sender's public key is the closest key to key_to_find
     %% it makes no sense to search any longer
-    io:format("PACKED NODES ARE ~p~n", [PackedNodes]),
     FilteredNodes = 
 	lists:filter(fun(PackedNode) ->
 			     case kbucket:distance_impl(KeyToFind, SenderPublicKey,
@@ -34,10 +33,8 @@ handle_event({nodes_response, SenderPublicKey, PackedNodes},
 				     true
 			     end
 		     end, PackedNodes),
-    io:format("FILTERED NODES ~p~n", [FilteredNodes]),
     IsFound = lists:search(fun(PackedN) -> packed_node:get_pk(PackedN) == KeyToFind end,
 			   FilteredNodes),
-    io:format("IS FOUND ~p~n", [IsFound]),
     case IsFound of
 	false ->
 	    NodesTo = trim_nodes(FilteredNodes),
@@ -45,7 +42,6 @@ handle_event({nodes_response, SenderPublicKey, PackedNodes},
 				  NMDHT = mdht_node:new_mdht_node(N),
 				  network_server:get_closest(NMDHT, KeyToFind, {Ref}) end, NodesTo);
 	{value, Value} ->
-	    io:format("SHOULD FIND A VALUE ~n"),
 	    mdht_server:finalize_find(From, Value, Ref)
     end,  
     {ok, State}.

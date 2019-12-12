@@ -67,7 +67,7 @@ handle_call({get_state}, _From, #state{waiting_queries = WaitingQueries} = State
 handle_cast({docommand, Target, ping_request}, State) ->
     RequestInner = ping_request,
     send_query_gen(Target, RequestInner, State);
-handle_cast({docommand, Target, {nodes_request, PublicKey, {}} = ReqI}, State) ->
+handle_cast({docommand, Target, {nodes_request, PublicKey, {}}}, State) ->
     ReqI = {nodes_request, PublicKey},
     RequestInner = ReqI,
     send_query_gen(Target, RequestInner, State);
@@ -115,7 +115,7 @@ handle_info({udp, Socket, IP, Port, Packet}, #state{waiting_queries = WaitingQue
 	    end;
 	%% if it's a ping request -- send ping response
 	{ok, SenderPublicKey, {ping_request, RequestId}} ->
-	    io:format("ping request has came"),
+	    io:format("ping request has came ~n"),
 	    %% we may receive pind request from unknown node
 	    %% so we need to check if this is one of the closest nodes
 	    %% let mdht_server handle this case 
@@ -156,6 +156,9 @@ handle_info({udp, Socket, IP, Port, Packet}, #state{waiting_queries = WaitingQue
 			_ ->
 			    ignore
 		    end,
+		    %% update closest nodes
+		    lists:foreach(fun(N) -> mdht_server:notify_pinged(N) end, PackedNodes),
+		    %% remove record from waiting queue
 		    WaitingQueriesThrown = maps:remove(FoundKey, WaitingQueries),
 		    {noreply, State#state{waiting_queries = WaitingQueriesThrown}}
 	    end;
@@ -171,14 +174,16 @@ handle_info({udp, Socket, IP, Port, Packet}, #state{waiting_queries = WaitingQue
 		    logger:debug("Send nodes response"),
 		    gen_udp:send(Socket, IP, Port, Binary),
 		    {noreply, State}
-	    end
+	    end;
+	Whate ->
+	    io:format("ERROR, UNKNOWN MESSAGE ~p~n", [Whate]),
+	    {noreply, State}
     end;
 handle_info(UnknownMsg, State) ->
     io:format("UNKNOWN MESSAGE ~p~n", [UnknownMsg]),
     {noreply, State}.
 
 	
-
 %% helpers 
 %% do some command asyncly
 docommand_async(Target, Comm) ->
@@ -193,8 +198,14 @@ send_query_gen(Target, RequestInner, #state{waiting_queries = WaitingQueries, so
     %% assuming Target is in mdht_node format here
     TargetPK = mdht_node:get_pk(Target),
     TargetAddress = mdht_node:get_socket_addr(Target),
-    {IP, Port} = extract_ip_port(TargetAddress),
+    {IP, PortT} = extract_ip_port(TargetAddress),
     EncodeRes = mdht_proto:encode({RequestInner, RequestId}, TargetPK),
+    Port = case PortT of
+	       V when is_list(V) ->
+		   list_to_integer(V);
+	       V when is_integer(V) ->
+		   V
+	   end,
     case gen_udp:send(Socket, IP, Port, EncodeRes) of
 	ok ->
 	    _TimerRef = time:send_after(?QUERY_TIMEOUT, ?MODULE, {check_query_exp, RequestId}),
