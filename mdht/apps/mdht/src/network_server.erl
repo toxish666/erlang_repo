@@ -17,7 +17,8 @@
 -export([
 	 start_link/1,
 	 ping/1,
-	 get_closest/2
+	 get_closest/2,
+	 get_closest/3
 	]).
 
 -record(state, {
@@ -26,7 +27,8 @@
 				     {RequestId :: non_neg_integer()}
 				     => 
 				     {packed_node:packed_node(),
-				      SentMessage :: any()}
+				      SentMessage :: any()} |
+				     {reference()} % for find manager
 				    }
 	       }).
 
@@ -40,9 +42,12 @@ start_link(Port) ->
 ping(MDhtNode) ->
     docommand_async(MDhtNode, ping_request).
 
-%% @doc Get closest nodes to some given key
+%% @doc Get closest nodes to some given key on another node
 get_closest(MDhtNode, PKIntrested) ->   
-    docommand_async(MDhtNode, {nodes_request, PKIntrested}).
+    get_closest(MDhtNode, PKIntrested, {}).
+
+get_closest(MDhtNode, PKIntrested, FindManagerId) ->
+    docommand_async(MDhtNode, {nodes_request, PKIntrested, FindManagerId}).
 
 %%%%%%%%%%%%%%%%%%%%%%%
 %% Gen server callbacks
@@ -62,10 +67,14 @@ handle_call({get_state}, _From, #state{waiting_queries = WaitingQueries} = State
 handle_cast({docommand, Target, ping_request}, State) ->
     RequestInner = ping_request,
     send_query_gen(Target, RequestInner, State);
-handle_cast({docommand, Target, {nodes_request, _PublicKey} = ReqI}, State) ->
+handle_cast({docommand, Target, {nodes_request, PublicKey, {}} = ReqI}, State) ->
+    ReqI = {nodes_request, PublicKey},
     RequestInner = ReqI,
-    send_query_gen(Target, RequestInner, State).
-		   
+    send_query_gen(Target, RequestInner, State);
+handle_cast({docommand, Target, {nodes_request, PublicKey, {_} = ManagerId}}, State) ->
+    ReqI = {nodes_request, PublicKey},
+    RequestInner = ReqI,
+    send_query_gen(Target, RequestInner, State, ManagerId).
 
 %% Message from timer
 handle_info({check_query_exp, RequestId}, #state{waiting_queries = WaitingQueries} = State) ->
@@ -138,9 +147,15 @@ handle_info({udp, Socket, IP, Port, Packet}, #state{waiting_queries = WaitingQue
 		    {noreply, State};
 		%% found it
 		FoundKey ->
-		    %% tell server to handle result
-		    mdht_server:notify_nodes_responded(SenderPublicKey, PackedNodes, RequestId),
-		    io:format("with nodes: ~p~n", [PackedNodes]),
+		    %% if we find handler id - send notification to it
+		    KeyRes = maps:get(FoundKey, WaitingQueries),
+		    case KeyRes of
+			{Ref} when is_reference(Ref) ->
+			     %% tell server to handle result
+			    mdht_server:notify_nodes_responded(SenderPublicKey, PackedNodes, Ref);
+			_ ->
+			    ignore
+		    end,
 		    WaitingQueriesThrown = maps:remove(FoundKey, WaitingQueries),
 		    {noreply, State#state{waiting_queries = WaitingQueriesThrown}}
 	    end;
@@ -170,7 +185,10 @@ docommand_async(Target, Comm) ->
     gen_server:cast(?MODULE, {docommand, Target, Comm}).
 
 %% send to a target service packet
-send_query_gen(Target, RequestInner, #state{waiting_queries = WaitingQueries, socket = Socket} = State) ->
+send_query_gen(Target, RequestInner, State) ->
+    send_query_gen(Target, RequestInner, State, {}).
+
+send_query_gen(Target, RequestInner, #state{waiting_queries = WaitingQueries, socket = Socket} = State, ManagerId) ->
     {ok, RequestId} = encryption_server:get_request_id(),
     %% assuming Target is in mdht_node format here
     TargetPK = mdht_node:get_pk(Target),
@@ -181,16 +199,27 @@ send_query_gen(Target, RequestInner, #state{waiting_queries = WaitingQueries, so
 	ok ->
 	    _TimerRef = time:send_after(?QUERY_TIMEOUT, ?MODULE, {check_query_exp, RequestId}),
 	    PackedNodeTarget = mdht_node:to_packed_node(Target),
-	    {noreply, State#state{waiting_queries = 
-				      WaitingQueries#{
-						      {RequestId} 
-						      => {PackedNodeTarget, RequestInner}
-						     }
-				 }
-	    };
+	    case ManagerId of
+		{} ->
+		    {noreply, State#state{waiting_queries = 
+					      WaitingQueries#{
+							      {RequestId} 
+							      => {PackedNodeTarget, RequestInner}
+							     }
+					 }
+		    };
+		{_} = ManagerId ->
+		    {noreply, State#state{waiting_queries = 
+					      WaitingQueries#{
+							      {RequestId}
+							      => ManagerId
+							     }
+					 }
+		    }
+	    end;
 	_ ->
 	    {noreply, State}
-    end.	
+    end.
 
 %% create packet to answer to the message
 assemble_message(SenderPublicKey, RequestId, InnerMessage) ->
