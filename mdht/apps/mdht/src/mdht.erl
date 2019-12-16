@@ -26,6 +26,8 @@
 	      either/2
 	     ]).
 
+-export([find/1]).
+
 %% behaviour
 -export([start/2, stop/1]).
 
@@ -34,3 +36,9 @@ start(_Type, _Args) ->
 
 stop(_State) ->
 	ok.
+
+
+find(PK) ->
+    mdht_server:find(PK).
+    
+
